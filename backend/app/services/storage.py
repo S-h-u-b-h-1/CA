@@ -54,7 +54,7 @@ class S3StorageProvider(StorageProvider):
         # Mock S3 downloading. If mock, fall back to local disk read
         local_fallback = LocalStorageProvider()
         file_name = os.path.basename(file_path)
-        return local_fallback.read_file(os.path.join(settings.LOCAL_STORAGE_DIR, file_name))
+        return local_fallback.read_file(os.path.join(local_fallback.upload_dir, file_name))
 
 
 class SupabaseStorageProvider(StorageProvider):
@@ -67,7 +67,7 @@ class SupabaseStorageProvider(StorageProvider):
     def read_file(self, file_path: str) -> bytes:
         local_fallback = LocalStorageProvider()
         file_name = os.path.basename(file_path)
-        return local_fallback.read_file(os.path.join(settings.LOCAL_STORAGE_DIR, file_name))
+        return local_fallback.read_file(os.path.join(local_fallback.upload_dir, file_name))
 
 
 class AzureStorageProvider(StorageProvider):
@@ -80,7 +80,7 @@ class AzureStorageProvider(StorageProvider):
     def read_file(self, file_path: str) -> bytes:
         local_fallback = LocalStorageProvider()
         file_name = os.path.basename(file_path)
-        return local_fallback.read_file(os.path.join(settings.LOCAL_STORAGE_DIR, file_name))
+        return local_fallback.read_file(os.path.join(local_fallback.upload_dir, file_name))
 
 
 class GCSStorageProvider(StorageProvider):
@@ -93,7 +93,7 @@ class GCSStorageProvider(StorageProvider):
     def read_file(self, file_path: str) -> bytes:
         local_fallback = LocalStorageProvider()
         file_name = os.path.basename(file_path)
-        return local_fallback.read_file(os.path.join(settings.LOCAL_STORAGE_DIR, file_name))
+        return local_fallback.read_file(os.path.join(local_fallback.upload_dir, file_name))
 
 
 def get_storage_provider() -> StorageProvider:
