@@ -16,13 +16,15 @@ router = APIRouter()
 @router.get("/sources", response_model=List[ComplianceSourceResponse])
 def list_compliance_sources(
     category: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     query = db.query(ComplianceSource).filter(ComplianceSource.deleted_at.is_(None))
     if category:
         query = query.filter(ComplianceSource.category == category)
-    return query.all()
+    return query.offset(skip).limit(limit).all()
 
 
 @router.post("/sources", response_model=ComplianceSourceResponse, status_code=status.HTTP_201_CREATED)

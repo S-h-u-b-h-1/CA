@@ -35,7 +35,7 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)
     first_name = Column(String(100), nullable=False)
@@ -55,13 +55,13 @@ class Client(Base):
     __tablename__ = "clients"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
     client_name = Column(String(255), nullable=False)
     client_type = Column(String(50), nullable=False)  # Individual / Proprietorship / Partnership / LLP / Company / Trust / HUF / Other
-    PAN = Column(String(10), nullable=True)
-    GSTIN = Column(String(15), nullable=True)
+    PAN = Column(String(10), nullable=True, index=True)
+    GSTIN = Column(String(15), nullable=True, index=True)
     CIN_LLPIN = Column(String(21), nullable=True)
-    TAN = Column(String(10), nullable=True)
+    TAN = Column(String(10), nullable=True, index=True)
     registered_address = Column(Text, nullable=True)
     contact_person = Column(String(100), nullable=True)
     contact_email = Column(String(255), nullable=True)
@@ -239,8 +239,8 @@ class RawDocument(Base):
     __tablename__ = "raw_documents"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
-    client_id = Column(String(36), ForeignKey("clients.id"), nullable=True)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=True, index=True)
     name = Column(String(255), nullable=False)
     file_path = Column(String(512), nullable=False)
     file_size = Column(Integer, nullable=False)
@@ -260,8 +260,8 @@ class ProcessedDocument(Base):
     __tablename__ = "processed_documents"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
-    raw_document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    raw_document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False, index=True)
     ocr_text = Column(Text, nullable=True)
     cleaned_tables_json = Column(JSON, nullable=True)
     normalized_text = Column(Text, nullable=True)
@@ -277,8 +277,8 @@ class StructuredDocument(Base):
     __tablename__ = "structured_documents"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
-    raw_document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    raw_document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False, index=True)
     parser_name = Column(String(100), nullable=False)
     extraction_date = Column(DateTime, default=datetime.utcnow)
     version = Column(Integer, default=1, nullable=False)
@@ -291,9 +291,9 @@ class StructuredInvoiceData(Base):
     __tablename__ = "structured_invoice_data"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
-    raw_document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False)
-    GSTIN = Column(String(15), nullable=True)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    raw_document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False, index=True)
+    GSTIN = Column(String(15), nullable=True, index=True)
     vendor_name = Column(String(255), nullable=True)
     invoice_number = Column(String(100), nullable=True)
     invoice_date = Column(DateTime, nullable=True)
@@ -317,8 +317,8 @@ class StructuredNoticeData(Base):
     __tablename__ = "structured_notice_data"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
-    raw_document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    raw_document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False, index=True)
     assessment_year = Column(String(10), nullable=True)
     section = Column(String(100), nullable=True)
     din = Column(String(100), nullable=True)
@@ -374,8 +374,8 @@ class KnowledgeChunk(Base):
     __tablename__ = "knowledge_chunks"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
-    processed_document_id = Column(String(36), ForeignKey("processed_documents.id"), nullable=False)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    processed_document_id = Column(String(36), ForeignKey("processed_documents.id"), nullable=False, index=True)
     chunk_index = Column(Integer, nullable=False)
     text_content = Column(Text, nullable=False)
     version = Column(Integer, default=1, nullable=False)
@@ -388,8 +388,8 @@ class Embedding(Base):
     __tablename__ = "embeddings"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
-    knowledge_chunk_id = Column(String(36), ForeignKey("knowledge_chunks.id"), nullable=False)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    knowledge_chunk_id = Column(String(36), ForeignKey("knowledge_chunks.id"), nullable=False, index=True)
     embedding_vector = Column(JSON, nullable=False)  # Stores float vector list
     version = Column(Integer, default=1, nullable=False)
     status = Column(String(50), default="ACTIVE", nullable=False)
@@ -401,9 +401,9 @@ class Entity(Base):
     __tablename__ = "entities"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
-    entity_type = Column(String(100), nullable=False)  # PAN, GSTIN, TAN, DIN, CIN, LLPIN, Name, Address, Company, Person, Court, Act, Section, Rule
-    value = Column(String(512), nullable=False)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    entity_type = Column(String(100), nullable=False, index=True)  # PAN, GSTIN, TAN, DIN, CIN, LLPIN, Name, Address, Company, Person, Court, Act, Section, Rule
+    value = Column(String(512), nullable=False, index=True)
     metadata_json = Column(JSON, nullable=True)
     version = Column(Integer, default=1, nullable=False)
     status = Column(String(50), default="ACTIVE", nullable=False)
@@ -415,9 +415,9 @@ class EntityRelationship(Base):
     __tablename__ = "entity_relationships"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
-    source_entity_id = Column(String(36), ForeignKey("entities.id"), nullable=False)
-    target_entity_id = Column(String(36), ForeignKey("entities.id"), nullable=False)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    source_entity_id = Column(String(36), ForeignKey("entities.id"), nullable=False, index=True)
+    target_entity_id = Column(String(36), ForeignKey("entities.id"), nullable=False, index=True)
     relationship_type = Column(String(100), nullable=False)  # Issued By, Belongs To, Director Of, References, Mentions, Appeal Against, etc.
     properties_json = Column(JSON, nullable=True)
     version = Column(Integer, default=1, nullable=False)
@@ -430,9 +430,9 @@ class Citation(Base):
     __tablename__ = "citations"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
-    source_document_id = Column(String(36), nullable=True)  # Can reference raw_documents or government_updates
-    target_entity_id = Column(String(36), ForeignKey("entities.id"), nullable=True)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    source_document_id = Column(String(36), nullable=True, index=True)  # Can reference raw_documents or government_updates
+    target_entity_id = Column(String(36), ForeignKey("entities.id"), nullable=True, index=True)
     text_reference = Column(Text, nullable=False)
     version = Column(Integer, default=1, nullable=False)
     status = Column(String(50), default="ACTIVE", nullable=False)
@@ -440,9 +440,9 @@ class Citation(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Phase 4 extensions
-    source_type = Column(String(50), nullable=True)  # CLIENT_DOCUMENT, GOVERNMENT_UPDATE, etc.
-    government_update_id = Column(String(36), nullable=True)
-    client_id = Column(String(36), nullable=True)
+    source_type = Column(String(50), nullable=True, index=True)  # CLIENT_DOCUMENT, GOVERNMENT_UPDATE, etc.
+    government_update_id = Column(String(36), nullable=True, index=True)
+    client_id = Column(String(36), nullable=True, index=True)
     page_number = Column(Integer, nullable=True)
     paragraph_number = Column(Integer, nullable=True)
     line_start = Column(Integer, nullable=True)
@@ -464,8 +464,8 @@ class DocumentVersion(Base):
     __tablename__ = "document_versions"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
-    raw_document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    raw_document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False, index=True)
     version_number = Column(Integer, nullable=False)
     file_path = Column(String(512), nullable=False)
     change_summary = Column(Text, nullable=True)
@@ -479,8 +479,8 @@ class ProcessingPipeline(Base):
     __tablename__ = "processing_pipeline"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
-    raw_document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    raw_document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False, index=True)
     current_step = Column(String(50), nullable=False)  # UPLOAD, OCR, PARSE, ENTITIES, EMBEDDINGS, KNOWLEDGE, COMPLETE
     status = Column(String(50), default="PENDING", nullable=False)  # PENDING, PROCESSING, SUCCESS, FAILED
     retries = Column(Integer, default=0, nullable=False)
@@ -493,8 +493,8 @@ class ProcessingError(Base):
     __tablename__ = "processing_errors"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
-    pipeline_id = Column(String(36), ForeignKey("processing_pipeline.id"), nullable=False)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    pipeline_id = Column(String(36), ForeignKey("processing_pipeline.id"), nullable=False, index=True)
     step_name = Column(String(50), nullable=False)
     error_message = Column(Text, nullable=False)
     stack_trace = Column(Text, nullable=True)
@@ -508,8 +508,8 @@ class KnowledgeGraphNode(Base):
     __tablename__ = "knowledge_graph_nodes"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
-    node_type = Column(String(50), nullable=False)  # Client, Firm, Employee, Notice, Act, Section, Circular, Case, Court, Assessment, Invoice, Return, Bank, Vendor, Director, Company
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    node_type = Column(String(50), nullable=False, index=True)  # Client, Firm, Employee, Notice, Act, Section, Circular, Case, Court, Assessment, Invoice, Return, Bank, Vendor, Director, Company
     label = Column(String(255), nullable=False)
     properties_json = Column(JSON, nullable=True)
     version = Column(Integer, default=1, nullable=False)
@@ -522,9 +522,9 @@ class KnowledgeGraphEdge(Base):
     __tablename__ = "knowledge_graph_edges"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
-    source_node_id = Column(String(36), ForeignKey("knowledge_graph_nodes.id"), nullable=False)
-    target_node_id = Column(String(36), ForeignKey("knowledge_graph_nodes.id"), nullable=False)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    source_node_id = Column(String(36), ForeignKey("knowledge_graph_nodes.id"), nullable=False, index=True)
+    target_node_id = Column(String(36), ForeignKey("knowledge_graph_nodes.id"), nullable=False, index=True)
     relationship = Column(String(100), nullable=False)  # Issued, Belongs To, Filed By, References, Depends On, Supersedes, Related To, Mentions, Against, Appealed, Supports, Conflicts
     properties_json = Column(JSON, nullable=True)
     version = Column(Integer, default=1, nullable=False)
@@ -537,7 +537,7 @@ class GovernmentSource(Base):
     __tablename__ = "government_sources"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    source_name = Column(String(255), nullable=False)
+    source_name = Column(String(255), nullable=False, index=True)
     category = Column(String(100), nullable=False)  # Income Tax, GST, MCA, CBIC, CBDT, ICAI, SEBI, RBI
     official_url = Column(String(512), nullable=False)
     requires_auth = Column(Boolean, default=False, nullable=False)
@@ -570,7 +570,7 @@ class GovernmentUpdate(Base):
     issue_date = Column(DateTime, nullable=True)
     effective_date = Column(DateTime, nullable=True)
     source_url = Column(String(512), nullable=True)
-    document_number = Column(String(100), nullable=True)
+    document_number = Column(String(100), nullable=True, index=True)
     version = Column(Integer, default=1, nullable=False)
     superseded_by = Column(String(36), nullable=True)
     related_acts = Column(JSON, nullable=True)

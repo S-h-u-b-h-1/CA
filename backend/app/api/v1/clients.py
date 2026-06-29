@@ -64,6 +64,8 @@ def create_client(
 def list_clients(
     status_filter: Optional[str] = None,
     search: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -78,7 +80,7 @@ def list_clients(
     if search:
         query = query.filter(Client.client_name.ilike(f"%{search}%"))
 
-    return query.all()
+    return query.offset(skip).limit(limit).all()
 
 
 @router.get("/{client_id}", response_model=ClientResponse)

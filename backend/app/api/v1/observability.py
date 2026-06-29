@@ -153,3 +153,15 @@ def retry_pipeline_job(
 
     return {"status": "success", "message": "Pipeline retry scheduled."}
 
+
+@router.get("/config")
+def get_system_config(current_user: User = Depends(get_current_user)):
+    from app.core.config import settings
+    return {
+        "llm_provider": settings.LLM_PROVIDER,
+        "embedding_provider": settings.EMBEDDING_PROVIDER,
+        "ocr_provider": settings.OCR_PROVIDER,
+        "storage_provider": settings.STORAGE_PROVIDER,
+        "env": settings.ENV
+    }
+

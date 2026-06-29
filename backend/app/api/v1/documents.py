@@ -130,6 +130,28 @@ async def upload_document(
             detail="File size exceeds maximum limit of 10MB"
         )
 
+    # 2.5 Validate File Signature (Magic Bytes) to prevent executable disguise
+    if file_ext == ".pdf" and not file_content.startswith(b"%PDF-"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File signature validation failed: content does not match PDF format."
+        )
+    elif file_ext == ".png" and not file_content.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File signature validation failed: content does not match PNG format."
+        )
+    elif file_ext in (".jpg", ".jpeg") and not file_content.startswith(b"\xff\xd8\xff"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File signature validation failed: content does not match JPEG format."
+        )
+    elif file_ext in (".docx", ".xlsx") and not file_content.startswith(b"PK\x03\x04"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File signature validation failed: content does not match ZIP/Office format."
+        )
+
     # 3. Compute hashes for deduplication
     hashes = DeduplicationEngine.calculate_file_hashes(file_content)
 
@@ -214,6 +236,8 @@ async def upload_document(
 def list_documents(
     client_id: Optional[str] = None,
     category: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -227,7 +251,7 @@ def list_documents(
     if category:
         query = query.filter(Document.category == category)
 
-    return query.all()
+    return query.offset(skip).limit(limit).all()
 
 
 @router.get("/{document_id}", response_model=DocumentResponse)

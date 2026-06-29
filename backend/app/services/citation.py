@@ -34,6 +34,24 @@ class CitationEngine:
         """
         Creates and returns a new Citation log entry in the database.
         """
+        # Check for existing duplicate citation before creating a new one
+        existing = db.query(Citation).filter(
+            Citation.organization_id == organization_id,
+            Citation.source_type == source_type,
+            Citation.source_document_id == source_document_id,
+            Citation.government_update_id == government_update_id,
+            Citation.paragraph_number == paragraph_number,
+            Citation.section_reference == section_reference,
+            Citation.rule_reference == rule_reference,
+            Citation.circular_number == circular_number,
+            Citation.notification_number == notification_number,
+            Citation.quote_text == quote_text,
+            Citation.target_entity_id == target_entity_id
+        ).first()
+
+        if existing:
+            return existing
+
         # Formulate text_reference description if empty
         if not text_reference:
             ref_parts = []
