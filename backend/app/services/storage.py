@@ -17,6 +17,8 @@ class StorageProvider(ABC):
 class LocalStorageProvider(StorageProvider):
     def __init__(self, upload_dir: str = None):
         self.upload_dir = upload_dir or settings.LOCAL_STORAGE_DIR
+        if os.environ.get("VERCEL") == "1":
+            self.upload_dir = "/tmp"
         if not os.path.exists(self.upload_dir):
             os.makedirs(self.upload_dir, exist_ok=True)
 
