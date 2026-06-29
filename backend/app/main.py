@@ -1,5 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import sys
+import os
+
+# Ensure local 'app' package is discoverable inside Vercel serverless environments
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.seeds import seed_compliance_sources
