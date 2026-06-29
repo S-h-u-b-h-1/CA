@@ -39,12 +39,16 @@ app.add_middleware(
 # Startup Seeding Events
 @app.on_event("startup")
 def startup_event():
-    db = SessionLocal()
     try:
-        # Run compliance registry seeding on application launch
-        seed_compliance_sources(db)
-    finally:
-        db.close()
+        db = SessionLocal()
+        try:
+            # Run compliance registry seeding on application launch
+            seed_compliance_sources(db)
+        finally:
+            db.close()
+    except Exception as e:
+        import sys
+        print(f"Startup Warning: Database seeding was skipped. Error details: {e}", file=sys.stderr)
 
 # Wires routers to main application path
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
