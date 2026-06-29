@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     # Storage settings
     STORAGE_PROVIDER: str = "local"
     LOCAL_STORAGE_DIR: str = "./uploads"
+    CORS_ORIGINS: str = "*"
 
     class Config:
         env_file = ".env"
