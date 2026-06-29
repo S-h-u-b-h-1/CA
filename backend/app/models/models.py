@@ -526,6 +526,19 @@ class GovernmentSource(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # Phase 3 Fields
+    health = Column(String(50), default="HEALTHY", nullable=False)
+    sync_frequency = Column(String(100), default="DAILY", nullable=False)
+    last_success = Column(DateTime, nullable=True)
+    last_failure = Column(DateTime, nullable=True)
+    average_response_time = Column(Float, default=0.0, nullable=False)
+    retry_count = Column(Integer, default=0, nullable=False)
+    total_documents_count = Column(Integer, default=0, nullable=False)
+    version_count = Column(Integer, default=0, nullable=False)
+    rate_limits = Column(String(100), default="60/minute", nullable=False)
+    connector_status = Column(String(50), default="RUNNING", nullable=False)
+    auth_requirements = Column(String(255), default="NONE", nullable=False)
+
 
 class GovernmentUpdate(Base):
     __tablename__ = "government_updates"
@@ -576,3 +589,37 @@ class AIJob(Base):
     version = Column(Integer, default=1, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ==============================================================================
+# PHASE 3 MODELS: GOVERNMENT KNOWLEDGE ACQUISITION PLATFORM
+# ==============================================================================
+
+class GovernmentUpdateVersion(Base):
+    __tablename__ = "government_update_versions"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    government_update_id = Column(String(36), ForeignKey("government_updates.id"), nullable=False)
+    version_number = Column(Integer, nullable=False)
+    raw_file_path = Column(String(512), nullable=True)
+    html_content = Column(Text, nullable=True)
+    markdown_content = Column(Text, nullable=True)
+    checksum = Column(String(64), nullable=False)
+    added_paragraphs = Column(JSON, nullable=True)
+    removed_paragraphs = Column(JSON, nullable=True)
+    changed_sections = Column(JSON, nullable=True)
+    effective_date = Column(DateTime, nullable=True)
+    structured_differences = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ConnectorSyncLog(Base):
+    __tablename__ = "connector_sync_logs"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    source_id = Column(String(36), ForeignKey("government_sources.id"), nullable=False)
+    sync_time = Column(DateTime, default=datetime.utcnow)
+    status = Column(String(50), nullable=False)  # SUCCESS, FAILED
+    documents_downloaded = Column(Integer, default=0, nullable=False)
+    error_message = Column(Text, nullable=True)
+    duration_ms = Column(Integer, default=0, nullable=False)

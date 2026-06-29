@@ -35,6 +35,9 @@ from app.models.models import (
     GovernmentUpdate,
     ParserRegistry,
     AIJob,
+    # Phase 3 Models
+    GovernmentUpdateVersion,
+    ConnectorSyncLog,
 )
 
 __all__ = [
@@ -74,4 +77,7 @@ __all__ = [
     "GovernmentUpdate",
     "ParserRegistry",
     "AIJob",
+    # Phase 3 Models
+    "GovernmentUpdateVersion",
+    "ConnectorSyncLog",
 ]
