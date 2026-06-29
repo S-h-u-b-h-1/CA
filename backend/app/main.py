@@ -67,3 +67,12 @@ def read_root():
         "service": "CA Intelligence Core API",
         "version": "1.0.0"
     }
+
+@app.get("/api")
+@app.get("/api/")
+def read_api_root():
+    return {
+        "status": "healthy",
+        "service": "CA Intelligence Core API (Monorepo API Route)",
+        "version": "1.0.0"
+    }
