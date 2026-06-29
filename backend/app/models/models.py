@@ -92,6 +92,8 @@ class Document(Base):
     processing_status = Column(String(50), default="PENDING")  # PENDING, PROCESSING, COMPLETED, FAILED
     extracted_text = Column(Text, nullable=True)
     embedding_status = Column(String(50), default="PENDING")  # PENDING, COMPLETED, FAILED
+    classification = Column(String(100), nullable=True)
+    ocr_provider = Column(String(50), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(DateTime, nullable=True)
@@ -251,6 +253,8 @@ class RawDocument(Base):
     file_fingerprint = Column(String(255), nullable=True)
     version = Column(Integer, default=1, nullable=False)
     status = Column(String(50), default="ACTIVE", nullable=False)
+    classification = Column(String(100), nullable=True)
+    ocr_provider = Column(String(50), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(DateTime, nullable=True)
@@ -704,6 +708,193 @@ class SourceClaim(Base):
     claim_text = Column(Text, nullable=False)
     citation_id = Column(String(36), ForeignKey("citations.id"), nullable=False)
     verification_status = Column(String(50), default="PENDING", nullable=False)  # VERIFIED, PARTIALLY_VERIFIED, FAILED, PENDING
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Form26ASEntry(Base):
+    __tablename__ = "form26as_entries"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False, index=True)
+    pan = Column(String(10), nullable=True)
+    assessment_year = Column(String(10), nullable=True)
+    financial_year = Column(String(10), nullable=True)
+    taxpayer_name = Column(String(255), nullable=True)
+    deductor_name = Column(String(255), nullable=True)
+    deductor_tan = Column(String(10), nullable=True)
+    section = Column(String(50), nullable=True)
+    amount_paid = Column(Float, nullable=True)
+    amount_credited = Column(Float, nullable=True)
+    tax_deducted = Column(Float, nullable=True)
+    tax_deposited = Column(Float, nullable=True)
+    refund = Column(Float, nullable=True)
+    interest = Column(Float, nullable=True)
+    demand = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class AISEntry(Base):
+    __tablename__ = "ais_entries"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False, index=True)
+    pan = Column(String(10), nullable=True)
+    assessment_year = Column(String(10), nullable=True)
+    financial_year = Column(String(10), nullable=True)
+    bank_interest = Column(Float, nullable=True)
+    dividend = Column(Float, nullable=True)
+    salary = Column(Float, nullable=True)
+    purchase_transactions = Column(Float, nullable=True)
+    sale_transactions = Column(Float, nullable=True)
+    foreign_remittance = Column(Float, nullable=True)
+    sft = Column(Text, nullable=True)
+    property = Column(Float, nullable=True)
+    securities = Column(Float, nullable=True)
+    crypto = Column(Float, nullable=True)
+    high_value_transactions = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class GSTNoticeEntry(Base):
+    __tablename__ = "gst_notice_entries"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False, index=True)
+    gstin = Column(String(15), nullable=True)
+    notice_number = Column(String(100), nullable=True)
+    issue_date = Column(DateTime, nullable=True)
+    reply_due_date = Column(DateTime, nullable=True)
+    section = Column(String(100), nullable=True)
+    authority = Column(String(255), nullable=True)
+    tax_period = Column(String(50), nullable=True)
+    amount = Column(Float, nullable=True)
+    penalty = Column(Float, nullable=True)
+    interest = Column(Float, nullable=True)
+    reason = Column(Text, nullable=True)
+    risk_level = Column(String(50), nullable=True)
+    referenced_sections = Column(Text, nullable=True)
+    referenced_notifications = Column(Text, nullable=True)
+    referenced_circulars = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class BankStatementTransaction(Base):
+    __tablename__ = "bank_statement_transactions"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False, index=True)
+    account_holder = Column(String(255), nullable=True)
+    bank_name = Column(String(255), nullable=True)
+    account_number = Column(String(100), nullable=True)
+    ifsc = Column(String(20), nullable=True)
+    opening_balance = Column(Float, nullable=True)
+    closing_balance = Column(Float, nullable=True)
+    transaction_date = Column(DateTime, nullable=True)
+    particulars = Column(Text, nullable=True)
+    transaction_type = Column(String(10), nullable=True)  # DEBIT / CREDIT
+    amount = Column(Float, nullable=True)
+    balance = Column(Float, nullable=True)
+    upi_ref = Column(String(100), nullable=True)
+    neft_rtgs_ref = Column(String(100), nullable=True)
+    cheque_number = Column(String(50), nullable=True)
+    narration = Column(Text, nullable=True)
+    running_balance = Column(Float, nullable=True)
+    monthly_summary = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class BalanceSheetItem(Base):
+    __tablename__ = "balance_sheet_items"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False, index=True)
+    financial_year = Column(String(10), nullable=True)
+    assets = Column(Float, nullable=True)
+    liabilities = Column(Float, nullable=True)
+    equity = Column(Float, nullable=True)
+    current_assets = Column(Float, nullable=True)
+    current_liabilities = Column(Float, nullable=True)
+    non_current_assets = Column(Float, nullable=True)
+    fixed_assets = Column(Float, nullable=True)
+    loans = Column(Float, nullable=True)
+    reserves = Column(Float, nullable=True)
+    capital = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class FinancialRatio(Base):
+    __tablename__ = "financial_ratios"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False, index=True)
+    current_ratio = Column(Float, nullable=True)
+    quick_ratio = Column(Float, nullable=True)
+    debt_to_equity = Column(Float, nullable=True)
+    return_on_equity = Column(Float, nullable=True)
+    working_capital = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class TaxSummary(Base):
+    __tablename__ = "tax_summaries"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False, index=True)
+    total_taxable_income = Column(Float, nullable=True)
+    total_tax_paid = Column(Float, nullable=True)
+    refund_claimed = Column(Float, nullable=True)
+    interest_payable = Column(Float, nullable=True)
+    outstanding_demand = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ChallanEntry(Base):
+    __tablename__ = "challan_entries"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False, index=True)
+    challan_number = Column(String(50), nullable=True)
+    bsr_code = Column(String(20), nullable=True)
+    date_of_deposit = Column(DateTime, nullable=True)
+    amount = Column(Float, nullable=True)
+    tax_period = Column(String(50), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class DeductorEntry(Base):
+    __tablename__ = "deductor_entries"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False, index=True)
+    deductor_name = Column(String(255), nullable=True)
+    deductor_tan = Column(String(10), nullable=True)
+    total_tds = Column(Float, nullable=True)
+    total_tcs = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class DocumentAISummary(Base):
+    __tablename__ = "document_ai_summaries"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False, index=True)
+    summary_text = Column(Text, nullable=True)
+    key_insights = Column(JSON, nullable=True)
+    compliance_issues = Column(JSON, nullable=True)
+    missing_information = Column(JSON, nullable=True)
+    suggested_actions = Column(JSON, nullable=True)
+    risk_level = Column(String(50), default="LOW")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

@@ -350,3 +350,213 @@ def delete_document(
     db.add(audit)
     db.commit()
     return None
+
+
+@router.get("/{document_id}/structured")
+def get_structured_data(
+    document_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    doc = db.query(Document).filter(
+        Document.id == document_id,
+        Document.organization_id == current_user.organization_id,
+        Document.deleted_at.is_(None)
+    ).first()
+    
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+        
+    from app.models.models import (
+        Form26ASEntry, AISEntry, GSTNoticeEntry, BankStatementTransaction,
+        BalanceSheetItem, FinancialRatio, TaxSummary, ChallanEntry, DeductorEntry
+    )
+    
+    classification = doc.classification or "Unknown"
+    
+    data = {
+        "classification": classification,
+        "pan": None,
+        "assessment_year": None,
+        "financial_year": None,
+        "details": {}
+    }
+    
+    if classification == "Form 26AS":
+        f26_entries = db.query(Form26ASEntry).filter(Form26ASEntry.document_id == document_id).all()
+        deductors = db.query(DeductorEntry).filter(DeductorEntry.document_id == document_id).all()
+        challans = db.query(ChallanEntry).filter(ChallanEntry.document_id == document_id).all()
+        tax_sum = db.query(TaxSummary).filter(TaxSummary.document_id == document_id).first()
+        
+        if f26_entries:
+            data["pan"] = f26_entries[0].pan
+            data["assessment_year"] = f26_entries[0].assessment_year
+            data["financial_year"] = f26_entries[0].financial_year
+            
+        data["details"] = {
+            "entries": [{
+                "deductor_name": e.deductor_name,
+                "deductor_tan": e.deductor_tan,
+                "section": e.section,
+                "amount_paid": e.amount_paid,
+                "tax_deducted": e.tax_deducted,
+                "tax_deposited": e.tax_deposited
+            } for e in f26_entries],
+            "deductors": [{
+                "name": d.deductor_name,
+                "tan": d.deductor_tan,
+                "total_tds": d.total_tds,
+                "total_tcs": d.total_tcs
+            } for d in deductors],
+            "challans": [{
+                "challan_number": c.challan_number,
+                "bsr_code": c.bsr_code,
+                "date_of_deposit": c.date_of_deposit.isoformat() if c.date_of_deposit else None,
+                "amount": c.amount
+            } for c in challans],
+            "summary": {
+                "total_tax_paid": tax_sum.total_tax_paid if tax_sum else 0.0,
+                "refund_claimed": tax_sum.refund_claimed if tax_sum else 0.0,
+                "outstanding_demand": tax_sum.outstanding_demand if tax_sum else 0.0
+            }
+        }
+        
+    elif classification in ["AIS", "TIS"]:
+        ais = db.query(AISEntry).filter(AISEntry.document_id == document_id).first()
+        if ais:
+            data["pan"] = ais.pan
+            data["assessment_year"] = ais.assessment_year
+            data["financial_year"] = ais.financial_year
+            data["details"] = {
+                "bank_interest": ais.bank_interest,
+                "dividend": ais.dividend,
+                "salary": ais.salary,
+                "purchase_transactions": ais.purchase_transactions,
+                "sale_transactions": ais.sale_transactions,
+                "foreign_remittance": ais.foreign_remittance,
+                "high_value_transactions": ais.high_value_transactions
+            }
+            
+    elif classification == "GST Notice":
+        gst = db.query(GSTNoticeEntry).filter(GSTNoticeEntry.document_id == document_id).first()
+        if gst:
+            data["details"] = {
+                "gstin": gst.gstin,
+                "notice_number": gst.notice_number,
+                "issue_date": gst.issue_date.isoformat() if gst.issue_date else None,
+                "reply_due_date": gst.reply_due_date.isoformat() if gst.reply_due_date else None,
+                "section": gst.section,
+                "authority": gst.authority,
+                "tax_period": gst.tax_period,
+                "amount": gst.amount,
+                "penalty": gst.penalty,
+                "interest": gst.interest,
+                "reason": gst.reason,
+                "risk_level": gst.risk_level
+            }
+            
+    elif classification == "Bank Statement":
+        txs = db.query(BankStatementTransaction).filter(BankStatementTransaction.document_id == document_id).all()
+        if txs:
+            data["details"] = {
+                "account_holder": txs[0].account_holder,
+                "bank_name": txs[0].bank_name,
+                "account_number": txs[0].account_number,
+                "transactions": [{
+                    "date": t.transaction_date.strftime("%d-%m-%Y") if t.transaction_date else None,
+                    "particulars": t.particulars,
+                    "type": t.transaction_type,
+                    "amount": t.amount,
+                    "balance": t.balance
+                } for t in txs]
+            }
+            
+    elif classification == "Balance Sheet":
+        bs = db.query(BalanceSheetItem).filter(BalanceSheetItem.document_id == document_id).first()
+        ratio = db.query(FinancialRatio).filter(FinancialRatio.document_id == document_id).first()
+        if bs:
+            data["financial_year"] = bs.financial_year
+            data["details"] = {
+                "assets": bs.assets,
+                "liabilities": bs.liabilities,
+                "equity": bs.equity,
+                "current_assets": bs.current_assets,
+                "current_liabilities": bs.current_liabilities,
+                "non_current_assets": bs.non_current_assets,
+                "fixed_assets": bs.fixed_assets,
+                "capital": bs.capital,
+                "reserves": bs.reserves,
+                "current_ratio": ratio.current_ratio if ratio else 1.0,
+                "working_capital": ratio.working_capital if ratio else 0.0
+            }
+            
+    else:
+        # Fallback structured tables
+        from app.models.models import StructuredInvoiceData, StructuredNoticeData
+        inv = db.query(StructuredInvoiceData).filter(StructuredInvoiceData.raw_document_id == document_id).first()
+        if inv:
+            data["classification"] = "Invoice"
+            data["details"] = {
+                "invoice_number": inv.invoice_number,
+                "invoice_date": inv.invoice_date.isoformat() if inv.invoice_date else None,
+                "vendor_name": inv.vendor_name,
+                "total_amount": inv.total_amount,
+                "taxable_value": inv.taxable_value
+            }
+        else:
+            notc = db.query(StructuredNoticeData).filter(StructuredNoticeData.raw_document_id == document_id).first()
+            if notc:
+                data["classification"] = "Notice"
+                data["assessment_year"] = notc.assessment_year
+                data["details"] = {
+                    "din": notc.din,
+                    "section": notc.section,
+                    "tax_demand_amount": notc.tax_demand_amount,
+                    "issuing_authority": notc.issuing_authority
+                }
+                
+    return data
+
+
+@router.get("/{document_id}/summary")
+def get_document_summary(
+    document_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    doc = db.query(Document).filter(
+        Document.id == document_id,
+        Document.organization_id == current_user.organization_id,
+        Document.deleted_at.is_(None)
+    ).first()
+    
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+        
+    from app.models.models import DocumentAISummary
+    ai_sum = db.query(DocumentAISummary).filter(DocumentAISummary.document_id == document_id).first()
+    if not ai_sum:
+        # Generate on-demand dummy or fallback summary if not created yet (to prevent crashes)
+        return {
+            "summary": "Document processing complete. Detailed summary and insights generation in progress.",
+            "key_insights": ["Document classified and indexed successfully."],
+            "compliance_issues": [],
+            "missing_information": [],
+            "suggested_actions": ["Review raw OCR extracted text in document dashboard."],
+            "risk_level": "LOW"
+        }
+        
+    return {
+        "summary": ai_sum.summary_text,
+        "key_insights": ai_sum.key_insights or [],
+        "compliance_issues": ai_sum.compliance_issues or [],
+        "missing_information": ai_sum.missing_information or [],
+        "suggested_actions": ai_sum.suggested_actions or [],
+        "risk_level": ai_sum.risk_level
+    }

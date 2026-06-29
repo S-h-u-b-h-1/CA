@@ -9,7 +9,10 @@ from app.models.models import (
     StructuredInvoiceData, StructuredNoticeData, StructuredReturnData, StructuredBankStatement,
     KnowledgeChunk, Embedding, Entity, EntityRelationship,
     Citation, DocumentVersion, ProcessingPipeline, ProcessingError,
-    KnowledgeGraphNode, KnowledgeGraphEdge
+    KnowledgeGraphNode, KnowledgeGraphEdge,
+    Form26ASEntry, AISEntry, GSTNoticeEntry, BankStatementTransaction,
+    BalanceSheetItem, FinancialRatio, TaxSummary, ChallanEntry, DeductorEntry,
+    DocumentAISummary
 )
 from app.services.deduplication import DeduplicationEngine
 from app.services.storage import get_storage_provider
@@ -91,8 +94,20 @@ class DocumentPipelineOrchestrator:
             pipeline.current_step = "PARSE"
             db.commit()
 
-            parser = ParserRegistry.get_parser(raw_doc.name) or ParserRegistry.get_parser(raw_doc.status) # fallback
+            # Classify the document type
+            doc_type = DocumentPipelineOrchestrator.classify_document(ocr_text or "", raw_doc.name)
+            raw_doc.classification = doc_type
             
+            # Sync classification to legacy Document if exists
+            from app.models.models import Document
+            legacy_doc = db.query(Document).filter(Document.id == raw_doc.id).first()
+            if legacy_doc:
+                legacy_doc.classification = doc_type
+                db.add(legacy_doc)
+            db.add(raw_doc)
+            db.commit()
+
+            parser = ParserRegistry.get_parser(doc_type)
             if parser and ocr_text:
                 structured_facts = parser.parse(ocr_text)
                 
@@ -104,13 +119,100 @@ class DocumentPipelineOrchestrator:
                     struct_link = StructuredDocument(
                         organization_id=raw_doc.organization_id,
                         raw_document_id=raw_doc_id,
-                        parser_name=parser.get_document_type()
+                        parser_name=doc_type
                     )
                     db.add(struct_link)
 
                 # Store fact tables scoped by type
-                doc_type = parser.get_document_type()
-                if doc_type == "Invoice":
+                if doc_type == "Form 26AS":
+                    # Store deductors
+                    for ded in structured_facts.get("deductors", []):
+                        ded_entry = DeductorEntry(
+                            organization_id=raw_doc.organization_id,
+                            document_id=raw_doc_id,
+                            deductor_name=ded.get("deductor_name"),
+                            deductor_tan=ded.get("deductor_tan"),
+                            total_tds=ded.get("total_tds", 0.0),
+                            total_tcs=ded.get("total_tcs", 0.0)
+                        )
+                        db.add(ded_entry)
+                    # Store TDS entries
+                    for entry in structured_facts.get("tds_entries", []):
+                        tds_entry = Form26ASEntry(
+                            organization_id=raw_doc.organization_id,
+                            document_id=raw_doc_id,
+                            pan=structured_facts.get("pan"),
+                            assessment_year=structured_facts.get("assessment_year"),
+                            financial_year=structured_facts.get("financial_year"),
+                            taxpayer_name=structured_facts.get("taxpayer_name"),
+                            deductor_name=entry.get("deductor_name"),
+                            deductor_tan=entry.get("deductor_tan"),
+                            section=entry.get("section"),
+                            amount_paid=entry.get("amount_paid"),
+                            amount_credited=entry.get("amount_credited"),
+                            tax_deducted=entry.get("tax_deducted"),
+                            tax_deposited=entry.get("tax_deposited")
+                        )
+                        db.add(tds_entry)
+                    # Store Challan entries
+                    for challan in structured_facts.get("challan_entries", []):
+                        ch_entry = ChallanEntry(
+                            organization_id=raw_doc.organization_id,
+                            document_id=raw_doc_id,
+                            challan_number=challan.get("challan_number"),
+                            bsr_code=challan.get("bsr_code"),
+                            date_of_deposit=challan.get("date_of_deposit"),
+                            amount=challan.get("amount")
+                        )
+                        db.add(ch_entry)
+                    # Create generic TaxSummary
+                    tax_sum = TaxSummary(
+                        organization_id=raw_doc.organization_id,
+                        document_id=raw_doc_id,
+                        total_tax_paid=structured_facts.get("total_tds", 0.0),
+                        refund_claimed=0.0,
+                        outstanding_demand=structured_facts.get("outstanding_demand", 0.0)
+                    )
+                    db.add(tax_sum)
+
+                elif doc_type in ["AIS", "TIS"]:
+                    ais_entry = AISEntry(
+                        organization_id=raw_doc.organization_id,
+                        document_id=raw_doc_id,
+                        pan=structured_facts.get("pan"),
+                        assessment_year=structured_facts.get("assessment_year"),
+                        financial_year=structured_facts.get("financial_year"),
+                        bank_interest=structured_facts.get("bank_interest"),
+                        dividend=structured_facts.get("dividend"),
+                        salary=structured_facts.get("salary"),
+                        purchase_transactions=structured_facts.get("purchase_transactions"),
+                        sale_transactions=structured_facts.get("sale_transactions"),
+                        foreign_remittance=structured_facts.get("foreign_remittance"),
+                        high_value_transactions=structured_facts.get("high_value_transactions")
+                    )
+                    db.add(ais_entry)
+
+                elif doc_type == "GST Notice":
+                    gst_notice = GSTNoticeEntry(
+                        organization_id=raw_doc.organization_id,
+                        document_id=raw_doc_id,
+                        gstin=structured_facts.get("gstin"),
+                        notice_number=structured_facts.get("notice_number"),
+                        issue_date=structured_facts.get("issue_date"),
+                        reply_due_date=structured_facts.get("reply_due_date"),
+                        section=structured_facts.get("section"),
+                        authority=structured_facts.get("authority"),
+                        tax_period=structured_facts.get("tax_period"),
+                        amount=structured_facts.get("amount"),
+                        penalty=structured_facts.get("penalty"),
+                        interest=structured_facts.get("interest"),
+                        reason=structured_facts.get("reason"),
+                        risk_level=structured_facts.get("risk_level")
+                    )
+                    db.add(gst_notice)
+
+                elif doc_type == "Invoice":
+                    # Backward compatibility for existing queries
                     inv_data = db.query(StructuredInvoiceData).filter(
                         StructuredInvoiceData.raw_document_id == raw_doc_id
                     ).first()
@@ -121,7 +223,9 @@ class DocumentPipelineOrchestrator:
                             **structured_facts
                         )
                         db.add(inv_data)
-                elif doc_type == "Notice":
+
+                elif doc_type == "Notice" or doc_type == "Income Tax Notice":
+                    # Backward compatibility for existing queries
                     notice_data = db.query(StructuredNoticeData).filter(
                         StructuredNoticeData.raw_document_id == raw_doc_id
                     ).first()
@@ -132,10 +236,56 @@ class DocumentPipelineOrchestrator:
                             **structured_facts
                         )
                         db.add(notice_data)
+
+                elif doc_type == "Bank Statement":
+                    for tx in structured_facts.get("transactions", []):
+                        tx_entry = BankStatementTransaction(
+                            organization_id=raw_doc.organization_id,
+                            document_id=raw_doc_id,
+                            account_holder=structured_facts.get("account_holder"),
+                            bank_name=structured_facts.get("bank_name"),
+                            account_number=structured_facts.get("account_number"),
+                            transaction_date=datetime.strptime(tx.get("date"), "%d-%m-%Y") if tx.get("date") else None,
+                            particulars=tx.get("particulars"),
+                            transaction_type=tx.get("type"),
+                            amount=tx.get("amount"),
+                            balance=tx.get("balance")
+                        )
+                        db.add(tx_entry)
+
                 elif doc_type == "Balance Sheet":
-                    # Store balance sheets inside processed doc tables JSON or similar structured data
-                    proc_doc.cleaned_tables_json = structured_facts
-                    db.add(proc_doc)
+                    bs_entry = BalanceSheetItem(
+                        organization_id=raw_doc.organization_id,
+                        document_id=raw_doc_id,
+                        financial_year=structured_facts.get("financial_year"),
+                        assets=structured_facts.get("assets"),
+                        liabilities=structured_facts.get("liabilities"),
+                        equity=structured_facts.get("equity"),
+                        current_assets=structured_facts.get("current_assets"),
+                        current_liabilities=structured_facts.get("current_liabilities"),
+                        non_current_assets=structured_facts.get("non_current_assets"),
+                        fixed_assets=structured_facts.get("fixed_assets"),
+                        capital=structured_facts.get("capital"),
+                        reserves=structured_facts.get("reserves")
+                    )
+                    db.add(bs_entry)
+                    
+                    # Compute working capital and current ratio
+                    cur_assets = structured_facts.get("current_assets", 0.0) or 0.0
+                    cur_liab = structured_facts.get("current_liabilities", 0.0) or 0.0
+                    ratio = cur_assets / cur_liab if cur_liab > 0 else 1.0
+                    ratio_entry = FinancialRatio(
+                        organization_id=raw_doc.organization_id,
+                        document_id=raw_doc_id,
+                        current_ratio=ratio,
+                        working_capital=(cur_assets - cur_liab)
+                    )
+                    db.add(ratio_entry)
+
+                # Save AI summary
+                DocumentPipelineOrchestrator.generate_ai_summary(
+                    db, raw_doc.organization_id, raw_doc_id, doc_type, structured_facts
+                )
 
             # 3. Entity Extraction
             pipeline.current_step = "ENTITIES"
@@ -297,3 +447,192 @@ class DocumentPipelineOrchestrator:
             results.append(("TAN", m))
 
         return list(set(results)) # Unique tuples
+
+    @staticmethod
+    def classify_document(text: str, filename: str) -> str:
+        name_lower = filename.lower()
+        text_lower = text.lower() if text else ""
+        
+        if "26as" in name_lower or "26as" in text_lower:
+            return "Form 26AS"
+        elif "ais" in name_lower or "annual information statement" in text_lower:
+            return "AIS"
+        elif "tis" in name_lower or "taxpayer information summary" in text_lower:
+            return "TIS"
+        elif "form 16" in name_lower or "form16" in name_lower or "form no. 16" in text_lower:
+            return "Form 16"
+        elif "itr" in name_lower and "ack" in name_lower or "acknowledgement" in text_lower:
+            return "ITR Acknowledgement"
+        elif "itr" in name_lower and (name_lower.endswith(".json") or name_lower.endswith(".xml")):
+            return "ITR JSON/XML"
+        elif "gst notice" in name_lower or ("gst" in text_lower and "notice" in text_lower):
+            return "GST Notice"
+        elif "income tax notice" in name_lower or ("income tax" in text_lower and "notice" in text_lower):
+            return "Income Tax Notice"
+        elif "gstr-1" in name_lower or "gstr1" in name_lower:
+            return "GSTR-1"
+        elif "gstr-2b" in name_lower or "gstr2b" in name_lower:
+            return "GSTR-2B"
+        elif "gstr-3b" in name_lower or "gstr3b" in name_lower or "gstr 3b" in text_lower:
+            return "GSTR-3B"
+        elif "invoice" in name_lower or "bill" in name_lower or "tax invoice" in text_lower:
+            return "Invoice"
+        elif "bank statement" in name_lower or "bank_statement" in name_lower or "statement of account" in text_lower:
+            return "Bank Statement"
+        elif "balance sheet" in name_lower or "bs" in name_lower or "balance sheet" in text_lower:
+            return "Balance Sheet"
+        elif "profit" in name_lower or "p&l" in name_lower or "p and l" in name_lower or "profit & loss" in text_lower:
+            return "Profit & Loss"
+        elif "trial balance" in name_lower or "trial balance" in text_lower:
+            return "Trial Balance"
+        elif "audit report" in name_lower or "auditor's report" in text_lower:
+            return "Audit Report"
+        elif "assessment order" in name_lower or "assessment order" in text_lower:
+            return "Assessment Order"
+        elif "appeal order" in name_lower or "appeal order" in text_lower:
+            return "Appeal Order"
+        elif "mca" in name_lower or "mca filing" in text_lower:
+            return "MCA Filing"
+        elif "roc" in name_lower or "roc filing" in text_lower:
+            return "ROC Filing"
+        elif filename.endswith(".pdf"):
+            return "General PDF"
+        else:
+            return "Unknown"
+
+    @staticmethod
+    def generate_ai_summary(db: Session, org_id: str, doc_id: str, doc_type: str, facts: dict) -> None:
+        summary = f"Summary of {doc_type} document."
+        insights = []
+        issues = []
+        missing = []
+        actions = []
+        risk = "LOW"
+
+        if doc_type == "Form 26AS":
+            pan = facts.get("pan") or "Unknown"
+            ay = facts.get("assessment_year") or "Unknown"
+            fy = facts.get("financial_year") or "Unknown"
+            total_tds = facts.get("total_tds", 0.0)
+            ded_count = len(facts.get("deductors", []))
+            
+            summary = f"Form 26AS Tax Credit Statement for PAN {pan}, AY {ay} (FY {fy}). Contains {ded_count} active deductor entries with a total TDS credit of INR {total_tds:,.2f}."
+            insights = [
+                f"Total tax deducted at source: INR {total_tds:,.2f}.",
+                f"Identified {ded_count} deductors matching PAN records."
+            ]
+            if total_tds > 1000000:
+                insights.append("High volume tax deductions detected.")
+                
+            actions = [
+                "Verify that all listed TDS credits are reflected in the client's draft ITR.",
+                "Cross-examine deductor TAN numbers with official TRACES portal entries."
+            ]
+            if not pan or pan == "Unknown":
+                missing.append("PAN identifier missing from document header.")
+                risk = "MEDIUM"
+                
+        elif doc_type == "AIS":
+            pan = facts.get("pan") or "Unknown"
+            ay = facts.get("assessment_year") or "Unknown"
+            interest = facts.get("bank_interest", 0.0)
+            dividend = facts.get("dividend", 0.0)
+            salary = facts.get("salary", 0.0)
+            sales = facts.get("sale_transactions", 0.0)
+            
+            summary = f"Annual Information Statement (AIS) for PAN {pan}, AY {ay}. Identifies salary of INR {salary:,.2f}, bank interest of INR {interest:,.2f}, dividend income of INR {dividend:,.2f}, and securities sales of INR {sales:,.2f}."
+            insights = [
+                f"Salary reported: INR {salary:,.2f}.",
+                f"Bank interest compiled: INR {interest:,.2f}.",
+                f"Dividend earnings: INR {dividend:,.2f}."
+            ]
+            if sales > 0:
+                insights.append(f"Mutual fund/equity sale transactions amount to INR {sales:,.2f}.")
+                actions.append("Reconcile securities transactions with Capital Gains schedule in ITR.")
+            if facts.get("high_value_transactions"):
+                risk = "HIGH"
+                issues.append("High value financial transactions flagged in AIS summary.")
+                actions.append("Request broker contract notes for high-value sales.")
+                
+        elif doc_type == "GST Notice":
+            gstin = facts.get("gstin") or "Unknown"
+            num = facts.get("notice_number") or "Unknown"
+            amt = facts.get("amount", 0.0)
+            risk = facts.get("risk_level", "MEDIUM")
+            
+            summary = f"GST Demand Notice ({num}) issued to GSTIN {gstin} under {facts.get('section', 'unknown section')}. Total outstanding demand: INR {amt:,.2f}."
+            insights = [
+                f"Notice number: {num}.",
+                f"Applicable section: {facts.get('section', 'N/A')}.",
+                f"Total demand amount: INR {amt:,.2f}."
+            ]
+            issues = [f"Unresolved tax liability of INR {amt:,.2f}."]
+            actions = [
+                f"Draft formal reply to notice {num} before response deadline.",
+                "Verify Input Tax Credit mismatch in GSTR-2B vs GSTR-3B."
+            ]
+            
+        elif doc_type == "Bank Statement":
+            holder = facts.get("account_holder") or "Unknown"
+            bank = facts.get("bank_name") or "Unknown"
+            acc = facts.get("account_number") or "Unknown"
+            tx_count = len(facts.get("transactions", []))
+            
+            summary = f"Bank statement of account {acc} with {bank} held by {holder}. Statement contains {tx_count} transaction lines."
+            insights = [
+                f"Bank: {bank}.",
+                f"Account Holder: {holder}.",
+                f"Transaction count: {tx_count}."
+            ]
+            actions = [
+                "Reconcile closing balance with balance sheet ledger entries.",
+                "Verify UPI and NEFT transfers for tax audits."
+            ]
+            
+        elif doc_type == "Balance Sheet":
+            fy = facts.get("financial_year") or "Unknown"
+            assets = facts.get("assets", 0.0)
+            liabilities = facts.get("liabilities", 0.0)
+            capital = facts.get("capital", 0.0)
+            
+            summary = f"Balance Sheet for FY {fy}. Total Assets: INR {assets:,.2f}. Total Liabilities: INR {liabilities:,.2f}."
+            insights = [
+                f"Total Capital & Reserves: INR {(capital + facts.get('reserves', 0.0)):,.2f}.",
+                f"Current Assets: INR {facts.get('current_assets', 0.0):,.2f}.",
+                f"Current Liabilities: INR {facts.get('current_liabilities', 0.0):,.2f}."
+            ]
+            # Compute working capital
+            wc = facts.get("current_assets", 0.0) - facts.get("current_liabilities", 0.0)
+            insights.append(f"Net working capital: INR {wc:,.2f}.")
+            if wc < 0:
+                issues.append("Negative working capital detected (liquidity risk).")
+                risk = "MEDIUM"
+            actions.append("Audit accounts payable ageing schedule.")
+
+        else:
+            summary = f"Successfully parsed {doc_type} document containing {len(facts)} fields."
+            insights = ["Document text successfully run through classification and parser framework."]
+            actions = ["Review extracted metadata and verify compliance rules."]
+
+        # Check if already exists, else write
+        ai_sum = db.query(DocumentAISummary).filter(DocumentAISummary.document_id == doc_id).first()
+        if not ai_sum:
+            ai_sum = DocumentAISummary(
+                organization_id=org_id,
+                document_id=doc_id,
+                summary_text=summary,
+                key_insights=insights,
+                compliance_issues=issues,
+                missing_information=missing,
+                suggested_actions=actions,
+                risk_level=risk
+            )
+            db.add(ai_sum)
+        else:
+            ai_sum.summary_text = summary
+            ai_sum.key_insights = insights
+            ai_sum.compliance_issues = issues
+            ai_sum.missing_information = missing
+            ai_sum.suggested_actions = actions
+            ai_sum.risk_level = risk
+        db.commit()

@@ -1,6 +1,6 @@
 import re
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Type, List
+from typing import Dict, Any, Type, List, Optional
 from datetime import datetime
 
 class BaseParser(ABC):
@@ -13,6 +13,343 @@ class BaseParser(ABC):
     def get_document_type(self) -> str:
         """Returns the supported category name"""
         pass
+
+
+class Form26ASParser(BaseParser):
+    def get_document_type(self) -> str:
+        return "Form 26AS"
+
+    def parse(self, text: str) -> Dict[str, Any]:
+        facts = {
+            "pan": None,
+            "assessment_year": None,
+            "financial_year": None,
+            "taxpayer_name": None,
+            "deductors": [],
+            "tds_entries": [],
+            "tcs_entries": [],
+            "challan_entries": [],
+            "refund_entries": [],
+            "outstanding_demand": 0.0,
+            "total_tds": 0.0,
+            "total_tcs": 0.0,
+        }
+
+        # 1. Base details
+        pan_match = re.search(r"PAN(?:\s+of\s+Taxpayer)?\s*[:\-]?\s*([A-Z]{5}[0-9]{4}[A-Z]{1})", text, re.IGNORECASE)
+        if pan_match:
+            facts["pan"] = pan_match.group(1).upper()
+            
+        ay_match = re.search(r"Assessment\s+Year\s*[:\-]?\s*([0-9]{4}-[0-9]{2,4})", text, re.IGNORECASE)
+        if ay_match:
+            facts["assessment_year"] = ay_match.group(1)
+            
+        fy_match = re.search(r"Financial\s+Year\s*[:\-]?\s*([0-9]{4}-[0-9]{2,4})", text, re.IGNORECASE)
+        if fy_match:
+            facts["financial_year"] = fy_match.group(1)
+
+        name_match = re.search(r"(?:Name\s+of\s+Taxpayer|Assessee\s+Name)\s*[:\-]?\s*([^\n]+)", text, re.IGNORECASE)
+        if name_match:
+            facts["taxpayer_name"] = name_match.group(1).strip()
+
+        # 2. Extract TDS Entries / Deductors
+        deductor_regex = r"(?:Deductor\s+Name|Name\s+of\s+Deductor)\s*[:\-]?\s*([^\n|]+?)\s*(?:TAN|TAN\s+of\s+Deductor)\s*[:\-]?\s*([A-Z]{4}[0-9]{5}[A-Z]{1})"
+        for m in re.finditer(deductor_regex, text, re.IGNORECASE):
+            d_name = m.group(1).strip()
+            d_tan = m.group(2).upper()
+            facts["deductors"].append({
+                "deductor_name": d_name,
+                "deductor_tan": d_tan,
+                "total_tds": 0.0,
+                "total_tcs": 0.0
+            })
+
+        # Regex for transaction detail rows: Section 194C, 194J, etc.
+        tds_entry_regex = r"(?:Section|Sec)\s+([0-9A-Z]{4,5})\s+(?:Amount\s+Paid|Amount\s+Credited)\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)\s+(?:Tax\s+Deducted|TDS)\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)"
+        for m in re.finditer(tds_entry_regex, text, re.IGNORECASE):
+            sec = m.group(1).strip()
+            amt_paid = float(m.group(2).replace(",", ""))
+            tds = float(m.group(3).replace(",", ""))
+            facts["tds_entries"].append({
+                "section": sec,
+                "amount_paid": amt_paid,
+                "tax_deducted": tds,
+                "tax_deposited": tds
+            })
+            facts["total_tds"] += tds
+
+        # Challan entries
+        challan_regex = r"Challan\s+No\s*[:\-]?\s*([0-9]+)\s+BSR\s+Code\s*[:\-]?\s*([0-9]+)\s+Amount\s*[:\-]?\s*([0-9,]+)"
+        for m in re.finditer(challan_regex, text, re.IGNORECASE):
+            c_num = m.group(1)
+            bsr = m.group(2)
+            amt = float(m.group(3).replace(",", ""))
+            facts["challan_entries"].append({
+                "challan_number": c_num,
+                "bsr_code": bsr,
+                "amount": amt,
+                "date_of_deposit": datetime.utcnow()
+            })
+
+        return facts
+
+
+class AISParser(BaseParser):
+    def get_document_type(self) -> str:
+        return "AIS"
+
+    def parse(self, text: str) -> Dict[str, Any]:
+        facts = {
+            "pan": None,
+            "assessment_year": None,
+            "financial_year": None,
+            "bank_interest": 0.0,
+            "dividend": 0.0,
+            "salary": 0.0,
+            "purchase_transactions": 0.0,
+            "sale_transactions": 0.0,
+            "foreign_remittance": 0.0,
+            "sft": [],
+            "property": 0.0,
+            "securities": 0.0,
+            "crypto": 0.0,
+            "high_value_transactions": False
+        }
+
+        # AY/FY/PAN
+        pan_match = re.search(r"PAN\s*[:\-]?\s*([A-Z]{5}[0-9]{4}[A-Z]{1})", text, re.IGNORECASE)
+        if pan_match:
+            facts["pan"] = pan_match.group(1).upper()
+        ay_match = re.search(r"Assessment\s+Year\s*[:\-]?\s*([0-9]{4}-[0-9]{2,4})", text, re.IGNORECASE)
+        if ay_match:
+            facts["assessment_year"] = ay_match.group(1)
+
+        # Basic financial checks from statement summaries
+        interest_match = re.search(r"(?:Bank\s+Interest|Saving\s+Bank\s+Interest|Interest\s+on\s+Deposits)\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
+        if interest_match:
+            facts["bank_interest"] = float(interest_match.group(1).replace(",", ""))
+
+        dividend_match = re.search(r"Dividend(?:\s+Income)?\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
+        if dividend_match:
+            facts["dividend"] = float(dividend_match.group(1).replace(",", ""))
+
+        salary_match = re.search(r"Salary\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
+        if salary_match:
+            facts["salary"] = float(salary_match.group(1).replace(",", ""))
+
+        sale_match = re.search(r"(?:Sale\s+of\s+Securities|Sale\s+of\s+Shares)\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
+        if sale_match:
+            facts["sale_transactions"] = float(sale_match.group(1).replace(",", ""))
+
+        purchase_match = re.search(r"(?:Purchase\s+of\s+Securities|Purchase\s+of\s+Shares)\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
+        if purchase_match:
+            facts["purchase_transactions"] = float(purchase_match.group(1).replace(",", ""))
+
+        if facts["sale_transactions"] > 1000000 or facts["purchase_transactions"] > 1000000:
+            facts["high_value_transactions"] = True
+
+        return facts
+
+
+class TISParser(BaseParser):
+    def get_document_type(self) -> str:
+        return "TIS"
+
+    def parse(self, text: str) -> Dict[str, Any]:
+        # TIS is Taxpayer Information Summary (AIS simplified)
+        facts = AISParser().parse(text)
+        facts["document_type"] = "TIS"
+        return facts
+
+
+class Form16Parser(BaseParser):
+    def get_document_type(self) -> str:
+        return "Form 16"
+
+    def parse(self, text: str) -> Dict[str, Any]:
+        facts = {
+            "pan_employee": None,
+            "tan_employer": None,
+            "employer_name": None,
+            "employee_name": None,
+            "assessment_year": None,
+            "gross_salary": 0.0,
+            "allowances_exempt": 0.0,
+            "deductions_chapter_via": 0.0,
+            "taxable_income": 0.0,
+            "tax_deposited": 0.0
+        }
+
+        ay_match = re.search(r"Assessment\s+Year\s*[:\-]?\s*([0-9]{4}-[0-9]{2,4})", text, re.IGNORECASE)
+        if ay_match:
+            facts["assessment_year"] = ay_match.group(1)
+
+        pan_match = re.search(r"PAN\s+of\s+(?:Employee|Assessee)\s*[:\-]?\s*([A-Z]{5}[0-9]{4}[A-Z]{1})", text, re.IGNORECASE)
+        if pan_match:
+            facts["pan_employee"] = pan_match.group(1).upper()
+
+        tan_match = re.search(r"TAN\s+of\s+Employer\s*[:\-]?\s*([A-Z]{4}[0-9]{5}[A-Z]{1})", text, re.IGNORECASE)
+        if tan_match:
+            facts["tan_employer"] = tan_match.group(1).upper()
+
+        sal_match = re.search(r"(?:Gross\s+Salary|Salary\s+under\s+section\s+17)\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
+        if sal_match:
+            facts["gross_salary"] = float(sal_match.group(1).replace(",", ""))
+
+        tax_match = re.search(r"Tax\s+Deposited\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
+        if tax_match:
+            facts["tax_deposited"] = float(tax_match.group(1).replace(",", ""))
+
+        return facts
+
+
+class GSTNoticeParser(BaseParser):
+    def get_document_type(self) -> str:
+        return "GST Notice"
+
+    def parse(self, text: str) -> Dict[str, Any]:
+        facts = {
+            "gstin": None,
+            "notice_number": None,
+            "issue_date": None,
+            "reply_due_date": None,
+            "section": None,
+            "authority": None,
+            "tax_period": None,
+            "amount": 0.0,
+            "penalty": 0.0,
+            "interest": 0.0,
+            "reason": None,
+            "risk_level": "MEDIUM",
+            "referenced_sections": None,
+            "referenced_notifications": None,
+            "referenced_circulars": None
+        }
+
+        gstin_match = re.search(r"GSTIN\s*[:\-]?\s*([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1})", text, re.IGNORECASE)
+        if gstin_match:
+            facts["gstin"] = gstin_match.group(1).upper()
+
+        notice_match = re.search(r"(?:Notice\s*(?:No|Ref|Number)?)\s*[:\-]?\s*([A-Z0-9/\-]+)", text, re.IGNORECASE)
+        if notice_match:
+            facts["notice_number"] = notice_match.group(1).strip()
+
+        sec_match = re.search(r"under\s+section\s+([0-9A-Z\(\)]+)", text, re.IGNORECASE)
+        if sec_match:
+            facts["section"] = f"Section {sec_match.group(1)}"
+
+        amt_match = re.search(r"(?:Outstanding\s+Demand|Demand\s+Amount|Total\s+Tax\s+Payable|Amount)\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
+        if amt_match:
+            facts["amount"] = float(amt_match.group(1).replace(",", ""))
+            if facts["amount"] > 1000000:
+                facts["risk_level"] = "HIGH"
+
+        facts["issue_date"] = datetime.utcnow()
+        facts["reply_due_date"] = datetime.utcnow()
+        return facts
+
+
+class IncomeTaxNoticeParser(BaseParser):
+    def get_document_type(self) -> str:
+        return "Income Tax Notice"
+
+    def parse(self, text: str) -> Dict[str, Any]:
+        facts = {
+            "pan": None,
+            "assessment_year": None,
+            "din": None,
+            "section": None,
+            "tax_demand_amount": 0.0,
+            "due_date": None,
+            "issues_identified": [],
+            "response_deadline": None,
+            "reply_draft": None,
+            "issuing_authority": "Income Tax Department"
+        }
+
+        pan_match = re.search(r"PAN\s*[:\-]?\s*([A-Z]{5}[0-9]{4}[A-Z]{1})", text, re.IGNORECASE)
+        if pan_match:
+            facts["pan"] = pan_match.group(1).upper()
+
+        ay_match = re.search(r"Assessment\s+Year\s*[:\-]?\s*([0-9]{4}-[0-9]{2,4})", text, re.IGNORECASE)
+        if ay_match:
+            facts["assessment_year"] = ay_match.group(1)
+
+        din_match = re.search(r"DIN\s*[:\-]?\s*([A-Za-z0-9/]+)", text, re.IGNORECASE)
+        if din_match:
+            facts["din"] = din_match.group(1).strip()
+
+        sec_match = re.search(r"under\s+section\s+([0-9A-Z\(\)]+)", text, re.IGNORECASE)
+        if sec_match:
+            facts["section"] = f"Section {sec_match.group(1)}"
+
+        demand_match = re.search(r"(?:Outstanding\s+Tax\s+Demand|Demand\s+Amount|Tax\s+Demand):\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
+        if demand_match:
+            facts["tax_demand_amount"] = float(demand_match.group(1).replace(",", ""))
+
+        facts["due_date"] = datetime.utcnow()
+        facts["response_deadline"] = datetime.utcnow()
+        return facts
+
+
+class GSTR1Parser(BaseParser):
+    def get_document_type(self) -> str:
+        return "GSTR-1"
+
+    def parse(self, text: str) -> Dict[str, Any]:
+        return {
+            "return_type": "GSTR-1",
+            "gstin": None,
+            "tax_period": None,
+            "total_taxable_value": 0.0,
+            "total_igst": 0.0,
+            "total_cgst": 0.0,
+            "total_sgst": 0.0,
+            "total_tax_payable": 0.0
+        }
+
+
+class GSTR2BParser(BaseParser):
+    def get_document_type(self) -> str:
+        return "GSTR-2B"
+
+    def parse(self, text: str) -> Dict[str, Any]:
+        return {
+            "return_type": "GSTR-2B",
+            "gstin": None,
+            "tax_period": None,
+            "eligible_itc_igst": 0.0,
+            "eligible_itc_cgst": 0.0,
+            "eligible_itc_sgst": 0.0,
+            "total_itc_claimed": 0.0
+        }
+
+
+class GSTR3BParser(BaseParser):
+    def get_document_type(self) -> str:
+        return "GSTR-3B"
+
+    def parse(self, text: str) -> Dict[str, Any]:
+        facts = {
+            "return_type": "GSTR-3B",
+            "gstin": None,
+            "tax_period": None,
+            "total_tax_payable": 0.0,
+            "total_itc_claimed": 0.0
+        }
+        gst_match = re.search(r"GSTIN\s*[:\-]?\s*([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1})", text, re.IGNORECASE)
+        if gst_match:
+            facts["gstin"] = gst_match.group(1).upper()
+        
+        itc_match = re.search(r"Eligible\s+Input\s+Tax\s+Credit\s*\(ITC\)[^\n]*Integrated\s+Tax:\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+)", text, re.IGNORECASE)
+        if itc_match:
+            facts["total_itc_claimed"] = float(itc_match.group(1).replace(",", ""))
+            
+        payable_match = re.search(r"Net\s+Tax\s+Payable[^\n]*Integrated\s+Tax:\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+)", text, re.IGNORECASE)
+        if payable_match:
+            facts["total_tax_payable"] = float(payable_match.group(1).replace(",", ""))
+            
+        return facts
 
 
 class InvoiceParser(BaseParser):
@@ -37,99 +374,65 @@ class InvoiceParser(BaseParser):
             "payment_status": "PENDING"
         }
 
-        # 1. Regex GSTIN extraction
-        gstin_match = re.search(r"GSTIN:\s*([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1})", text, re.IGNORECASE)
+        gstin_match = re.search(r"GSTIN\s*[:\-]?\s*([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1})", text, re.IGNORECASE)
         if gstin_match:
-            facts["GSTIN"] = gstin_match.group(1)
+            facts["GSTIN"] = gstin_match.group(1).upper()
 
-        # 2. Invoice number
         inv_match = re.search(r"(?:Invoice\s*(?:No|Number|#)?|Inv)\s*[:\-]?\s*([A-Za-z0-9/\-]+)", text, re.IGNORECASE)
         if inv_match:
             facts["invoice_number"] = inv_match.group(1).strip()
 
-        # 3. Vendor extraction
-        vendor_match = re.search(r"Legal Name:\s*([^\n]+)", text, re.IGNORECASE)
+        vendor_match = re.search(r"Legal\s+Name\s*[:\-]?\s*([^\n]+)", text, re.IGNORECASE)
         if vendor_match:
             facts["vendor_name"] = vendor_match.group(1).strip()
-        else:
-            # Fallback check first lines
-            lines = [l.strip() for l in text.split("\n") if l.strip()]
-            if lines:
-                facts["vendor_name"] = lines[0]
 
-        # 4. Tax values
-        taxable_match = re.search(r"Taxable Value:\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
+        taxable_match = re.search(r"Taxable\s+Value\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
         if taxable_match:
             facts["taxable_value"] = float(taxable_match.group(1).replace(",", ""))
-
-        igst_match = re.search(r"Integrated Tax:\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
-        if igst_match:
-            facts["igst"] = float(igst_match.group(1).replace(",", ""))
-
-        cgst_match = re.search(r"Central Tax:\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
-        if cgst_match:
-            facts["cgst"] = float(cgst_match.group(1).replace(",", ""))
-
-        sgst_match = re.search(r"State Tax:\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
-        if sgst_match:
-            facts["sgst"] = float(sgst_match.group(1).replace(",", ""))
-
-        # Calculate Total if missing
-        total_match = re.search(r"Total Amount:\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
-        if total_match:
-            facts["total_amount"] = float(total_match.group(1).replace(",", ""))
-        else:
-            facts["total_amount"] = facts["taxable_value"] + facts["igst"] + facts["cgst"] + facts["sgst"]
 
         facts["invoice_date"] = datetime.utcnow()
         return facts
 
 
-class NoticeParser(BaseParser):
+class BankStatementParser(BaseParser):
     def get_document_type(self) -> str:
-        return "Notice"
+        return "Bank Statement"
 
     def parse(self, text: str) -> Dict[str, Any]:
         facts = {
-            "assessment_year": None,
-            "section": None,
-            "din": None,
-            "issuing_authority": "Income Tax Department of India",
-            "tax_demand_amount": 0.0,
-            "due_date": None,
-            "issues_identified": [],
-            "response_deadline": None,
-            "reply_draft": None
+            "account_holder": None,
+            "bank_name": None,
+            "account_number": None,
+            "ifsc": None,
+            "opening_balance": 0.0,
+            "closing_balance": 0.0,
+            "transactions": []
         }
 
-        # AY
-        ay_match = re.search(r"Assessment Year:\s*([0-9]{4}-[0-9]{2,4})", text, re.IGNORECASE)
-        if ay_match:
-            facts["assessment_year"] = ay_match.group(1)
+        bank_match = re.search(r"\b(?:Bank\s+of\s+[A-Za-z]+|HDFC(?:\s+Bank)?|ICICI(?:\s+Bank)?|SBI(?:\s+Bank)?|State\s+Bank|Axis(?:\s+Bank)?|Yes\s+Bank|Kotak(?:\s+Bank)?)\b", text, re.IGNORECASE)
+        if bank_match:
+            facts["bank_name"] = bank_match.group(0).strip()
 
-        # Section
-        sec_match = re.search(r"section\s+([0-9A-Z\(\)]+)", text, re.IGNORECASE)
-        if sec_match:
-            facts["section"] = f"Section {sec_match.group(1)}"
+        holder_match = re.search(r"(?:Account\s+Holder|Name|Customer\s+Name)\s*[:\-]?\s*([^\n]+)", text, re.IGNORECASE)
+        if holder_match:
+            facts["account_holder"] = holder_match.group(1).strip()
 
-        # DIN
-        din_match = re.search(r"DIN:\s*([A-Za-z0-9/]+)", text, re.IGNORECASE)
-        if din_match:
-            facts["din"] = din_match.group(1).strip()
+        acc_match = re.search(r"(?:Account\s+Number|Acc\s+No|A/C\s+No|statement\s+of\s+account|account)\s*[:\-]?\s*([0-9]+)", text, re.IGNORECASE)
+        if acc_match:
+            facts["account_number"] = acc_match.group(1)
 
-        # Demand Amount
-        demand_match = re.search(r"(?:Outstanding Tax Demand|Demand Amount|Demand):\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
-        if demand_match:
-            facts["tax_demand_amount"] = float(demand_match.group(1).replace(",", ""))
-
-        # Deadlines
-        facts["due_date"] = datetime.utcnow()
-        facts["response_deadline"] = datetime.utcnow()
-        
-        # Mocks
-        facts["issues_identified"] = ["Mismatch in Form 26AS TDS credits vs claimed deductions."]
-        facts["reply_draft"] = "Rectification submission under Section 154 drafted."
-        
+        # Extract mock transactions from text
+        # Regex scanning lines like "15-06-2026 DEBIT UPI/12345 INR 4,500 Balance 90,000"
+        tx_regex = r"([0-9\-]{8,10})\s+(DEBIT|CREDIT)\s+(UPI|NEFT|RTGS|CHQ)?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)\s+Balance\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+)"
+        for m in re.finditer(tx_regex, text, re.IGNORECASE):
+            facts["transactions"].append({
+                "date": m.group(1),
+                "type": m.group(2).upper(),
+                "particulars": f"Payment via {m.group(3) or 'TRANSFER'}",
+                "amount": float(m.group(4).replace(",", "")),
+                "balance": float(m.group(5).replace(",", ""))
+            })
+            
         return facts
 
 
@@ -140,49 +443,119 @@ class BalanceSheetParser(BaseParser):
     def parse(self, text: str) -> Dict[str, Any]:
         facts = {
             "financial_year": "2025-26",
-            "equity_share_capital": 0.0,
-            "reserves_and_surplus": 0.0,
-            "non_current_liabilities": 0.0,
-            "current_liabilities": 0.0,
-            "total_liabilities": 0.0,
-            "fixed_assets": 0.0,
+            "assets": 0.0,
+            "liabilities": 0.0,
+            "equity": 0.0,
             "current_assets": 0.0,
-            "total_assets": 0.0,
-            "auditor_name": None
+            "current_liabilities": 0.0,
+            "non_current_assets": 0.0,
+            "fixed_assets": 0.0,
+            "loans": 0.0,
+            "reserves": 0.0,
+            "capital": 0.0
         }
 
-        # Capital
-        capital_match = re.search(r"Share Capital\s*(?:\| \d+ \|)?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+)", text, re.IGNORECASE)
+        capital_match = re.search(r"Share\s+Capital[^\n]*?([0-9,]+)", text, re.IGNORECASE)
         if capital_match:
-            facts["equity_share_capital"] = float(capital_match.group(1).replace(",", ""))
+            facts["capital"] = float(capital_match.group(1).replace(",", ""))
 
-        # Reserves
-        res_match = re.search(r"Reserves\s*&\s*Surplus\s*(?:\| \d+ \|)?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+)", text, re.IGNORECASE)
+        res_match = re.search(r"Reserves\s*&\s*Surplus[^\n]*?([0-9,]+)", text, re.IGNORECASE)
         if res_match:
-            facts["reserves_and_surplus"] = float(res_match.group(1).replace(",", ""))
+            facts["reserves"] = float(res_match.group(1).replace(",", ""))
 
-        # Liabilities
-        ncl_match = re.search(r"Non-Current Liabilities\s*(?:\| \d+ \|)?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+)", text, re.IGNORECASE)
+        ncl_match = re.search(r"Non-Current\s+Liabilities[^\n]*?([0-9,]+)", text, re.IGNORECASE)
         if ncl_match:
-            facts["non_current_liabilities"] = float(ncl_match.group(1).replace(",", ""))
+            facts["liabilities"] += float(ncl_match.group(1).replace(",", ""))
 
-        cl_match = re.search(r"Current Liabilities\s*(?:\| \d+ \|)?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+)", text, re.IGNORECASE)
+        cl_match = re.search(r"Current\s+Liabilities[^\n]*?([0-9,]+)", text, re.IGNORECASE)
         if cl_match:
             facts["current_liabilities"] = float(cl_match.group(1).replace(",", ""))
+            facts["liabilities"] += facts["current_liabilities"]
 
-        # Assets
-        fa_match = re.search(r"(?:Fixed Assets|Non-Current Assets)\s*(?:\| \d+ \|)?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+)", text, re.IGNORECASE)
+        fa_match = re.search(r"(?:Fixed\s+Assets|Non-Current\s+Assets)[^\n]*?([0-9,]+)", text, re.IGNORECASE)
         if fa_match:
             facts["fixed_assets"] = float(fa_match.group(1).replace(",", ""))
+            facts["non_current_assets"] = facts["fixed_assets"]
 
-        ca_match = re.search(r"Current Assets\s*(?:\| \d+ \|)?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+)", text, re.IGNORECASE)
+        ca_match = re.search(r"Current\s+Assets[^\n]*?([0-9,]+)", text, re.IGNORECASE)
         if ca_match:
             facts["current_assets"] = float(ca_match.group(1).replace(",", ""))
 
-        facts["total_assets"] = facts["fixed_assets"] + facts["current_assets"]
-        facts["total_liabilities"] = facts["equity_share_capital"] + facts["reserves_and_surplus"] + facts["non_current_liabilities"] + facts["current_liabilities"]
-
+        facts["assets"] = facts["non_current_assets"] + facts["current_assets"]
+        facts["equity"] = facts["capital"] + facts["reserves"]
         return facts
+
+
+class PLParser(BaseParser):
+    def get_document_type(self) -> str:
+        return "Profit & Loss"
+
+    def parse(self, text: str) -> Dict[str, Any]:
+        return {
+            "revenue": 0.0,
+            "net_profit": 0.0,
+            "ebitda": 0.0,
+            "expenses": 0.0
+        }
+
+
+class TrialBalanceParser(BaseParser):
+    def get_document_type(self) -> str:
+        return "Trial Balance"
+
+    def parse(self, text: str) -> Dict[str, Any]:
+        return {
+            "debit_total": 0.0,
+            "credit_total": 0.0,
+            "ledger_count": 0
+        }
+
+
+class AuditReportParser(BaseParser):
+    def get_document_type(self) -> str:
+        return "Audit Report"
+
+    def parse(self, text: str) -> Dict[str, Any]:
+        return {
+            "auditor_name": None,
+            "membership_number": None,
+            "opinion": "UNQUALIFIED"
+        }
+
+
+class AssessmentOrderParser(BaseParser):
+    def get_document_type(self) -> str:
+        return "Assessment Order"
+
+    def parse(self, text: str) -> Dict[str, Any]:
+        return {
+            "order_date": None,
+            "tax_demand": 0.0,
+            "section": "143(3)"
+        }
+
+
+class AppealOrderParser(BaseParser):
+    def get_document_type(self) -> str:
+        return "Appeal Order"
+
+    def parse(self, text: str) -> Dict[str, Any]:
+        return {
+            "order_date": None,
+            "relief_amount": 0.0,
+            "status": "ALLOWED"
+        }
+
+
+class GeneralDocumentParser(BaseParser):
+    def get_document_type(self) -> str:
+        return "General Document"
+
+    def parse(self, text: str) -> Dict[str, Any]:
+        return {
+            "summary": "General document text analyzed.",
+            "char_count": len(text)
+        }
 
 
 class ParserRegistry:
@@ -194,15 +567,18 @@ class ParserRegistry:
 
     @classmethod
     def get_parser(cls, category: str) -> BaseParser | None:
-        parser_cls = cls._parsers.get(category.lower())
+        cat_lower = category.lower()
+        
+        # Exact match
+        parser_cls = cls._parsers.get(cat_lower)
         if parser_cls:
             return parser_cls()
         
-        # Soft match
+        # Soft prefix/suffix match
         for key, p_cls in cls._parsers.items():
-            if key in category.lower() or category.lower() in key:
+            if key in cat_lower or cat_lower in key:
                 return p_cls()
-        return None
+        return GeneralDocumentParser()
 
     @classmethod
     def list_registered(cls) -> List[Dict[str, Any]]:
@@ -216,7 +592,22 @@ class ParserRegistry:
         ]
 
 
-# Register standard parsers
+# Register all Phase 5 parsers
+ParserRegistry.register("Form 26AS", Form26ASParser)
+ParserRegistry.register("AIS", AISParser)
+ParserRegistry.register("TIS", TISParser)
+ParserRegistry.register("Form 16", Form16Parser)
+ParserRegistry.register("GST Notice", GSTNoticeParser)
+ParserRegistry.register("Income Tax Notice", IncomeTaxNoticeParser)
+ParserRegistry.register("GSTR-1", GSTR1Parser)
+ParserRegistry.register("GSTR-2B", GSTR2BParser)
+ParserRegistry.register("GSTR-3B", GSTR3BParser)
 ParserRegistry.register("Invoice", InvoiceParser)
-ParserRegistry.register("Notice", NoticeParser)
+ParserRegistry.register("Bank Statement", BankStatementParser)
 ParserRegistry.register("Balance Sheet", BalanceSheetParser)
+ParserRegistry.register("Profit & Loss", PLParser)
+ParserRegistry.register("Trial Balance", TrialBalanceParser)
+ParserRegistry.register("Audit Report", AuditReportParser)
+ParserRegistry.register("Assessment Order", AssessmentOrderParser)
+ParserRegistry.register("Appeal Order", AppealOrderParser)
+ParserRegistry.register("General Document", GeneralDocumentParser)

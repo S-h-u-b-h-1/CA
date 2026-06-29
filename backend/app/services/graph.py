@@ -290,6 +290,52 @@ class GraphService:
             node = GraphService.add_node(db, organization_id, "NOTIFICATION", notif)
             GraphService.add_edge(db, organization_id, doc_node.id, node.id, "REFERENCES")
 
+        # 5. Extract and Link Deductors/Sections from Form 26AS Entries
+        from app.models.models import Form26ASEntry, AISEntry, GSTNoticeEntry
+        f26_entries = db.query(Form26ASEntry).filter(Form26ASEntry.document_id == doc_id).all()
+        for f26 in f26_entries:
+            if f26.deductor_name:
+                ded_node = GraphService.add_node(db, organization_id, "DEDUCTOR", f26.deductor_name, {"tan": f26.deductor_tan})
+                GraphService.add_edge(db, organization_id, doc_node.id, ded_node.id, "PAID_BY")
+                
+                # Link Document -> PAN
+                if f26.pan:
+                    pan_node = GraphService.add_node(db, organization_id, "PAN", f26.pan)
+                    GraphService.add_edge(db, organization_id, doc_node.id, pan_node.id, "BELONGS_TO")
+                    
+                    # Link PAN -> Assessment Year
+                    if f26.assessment_year:
+                        ay_node = GraphService.add_node(db, organization_id, "ASSESSMENT_YEAR", f26.assessment_year)
+                        GraphService.add_edge(db, organization_id, pan_node.id, ay_node.id, "FOR_YEAR")
+                        
+                        # Link Assessment Year -> Deductor
+                        GraphService.add_edge(db, organization_id, ay_node.id, ded_node.id, "HAS_DEDUCTOR")
+                        
+                # Link Deductor -> Section
+                if f26.section:
+                    sec_node = GraphService.add_node(db, organization_id, "SECTION", f26.section)
+                    GraphService.add_edge(db, organization_id, ded_node.id, sec_node.id, "DEDUCTED_UNDER")
+
+        # 6. Extract and Link AIS Details
+        ais_entries = db.query(AISEntry).filter(AISEntry.document_id == doc_id).all()
+        for ais in ais_entries:
+            if ais.pan:
+                pan_node = GraphService.add_node(db, organization_id, "PAN", ais.pan)
+                GraphService.add_edge(db, organization_id, doc_node.id, pan_node.id, "BELONGS_TO")
+                if ais.assessment_year:
+                    ay_node = GraphService.add_node(db, organization_id, "ASSESSMENT_YEAR", ais.assessment_year)
+                    GraphService.add_edge(db, organization_id, pan_node.id, ay_node.id, "FOR_YEAR")
+
+        # 7. Extract and Link GST Notices
+        gst_entries = db.query(GSTNoticeEntry).filter(GSTNoticeEntry.document_id == doc_id).all()
+        for gst in gst_entries:
+            if gst.gstin:
+                gst_node = GraphService.add_node(db, organization_id, "GSTIN", gst.gstin)
+                GraphService.add_edge(db, organization_id, doc_node.id, gst_node.id, "ISSUED_TO")
+            if gst.notice_number:
+                notice_node = GraphService.add_node(db, organization_id, "NOTICE", gst.notice_number, {"section": gst.section, "authority": gst.authority})
+                GraphService.add_edge(db, organization_id, doc_node.id, notice_node.id, "COMPLIANCE_NOTICE")
+
         return True
 
     @staticmethod
