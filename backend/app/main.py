@@ -31,9 +31,12 @@ app = FastAPI(
 # Configure CORS for local development and client interfaces
 # Allow all in local/development but strictly narrow down in production
 origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
+allow_all = "*" in origins or not origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins if origins else ["*"],
+    allow_origins=[] if allow_all else origins,
+    allow_origin_regex=r"https?://.*" if allow_all else r"https://.*\.vercel\.app|http://localhost:\d+|http://127\.0\.0\.1:\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
