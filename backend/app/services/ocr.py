@@ -11,6 +11,12 @@ class OCRProvider(ABC):
 class MockOCRProvider(OCRProvider):
     def extract_text(self, file_content: bytes, file_name: str) -> str:
         name_lower = file_name.lower()
+        if name_lower.endswith(".txt"):
+            try:
+                return file_content.decode("utf-8")
+            except Exception:
+                pass
+
         if "gstr-3b" in name_lower or "gstr3b" in name_lower:
             return (
                 "GST Return - Form GSTR-3B\n"
