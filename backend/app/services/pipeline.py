@@ -297,23 +297,6 @@ class DocumentPipelineOrchestrator:
                     # Deduplicate and resolve entity using GraphService
                     ent = GraphService.resolve_entity(db, raw_doc.organization_id, etype, evalue)
 
-                    # Connect raw document to entity via Relationship
-                    rel = db.query(EntityRelationship).filter(
-                        EntityRelationship.organization_id == raw_doc.organization_id,
-                        EntityRelationship.source_entity_id == ent.id,
-                        EntityRelationship.target_entity_id == raw_doc_id,
-                        EntityRelationship.relationship_type == "MENTIONS"
-                    ).first()
-                    
-                    if not rel:
-                        rel = EntityRelationship(
-                            organization_id=raw_doc.organization_id,
-                            source_entity_id=ent.id,
-                            target_entity_id=raw_doc_id,
-                            relationship_type="MENTIONS"
-                        )
-                        db.add(rel)
-
                     # Add Citation log
                     CitationEngine.create_citation(
                         db=db,
