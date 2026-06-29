@@ -282,6 +282,21 @@ class SearchGraphNodeResult(BaseModel):
     label: str
     properties: Optional[Dict[str, Any]] = None
 
+class SearchCitationResult(BaseModel):
+    id: str
+    source_type: str
+    quote_text: Optional[str] = None
+    section_reference: Optional[str] = None
+    act_reference: Optional[str] = None
+    text_reference: str
+    confidence_score: float
+
+class SearchGraphEdgeResult(BaseModel):
+    id: str
+    source_node_id: str
+    target_node_id: str
+    relationship: str
+
 class SearchResult(BaseModel):
     clients: List[SearchClientResult]
     documents: List[SearchDocumentResult]
@@ -290,3 +305,6 @@ class SearchResult(BaseModel):
     structured_notices: List[SearchNoticeResult]
     knowledge_chunks: List[SearchChunkResult]
     graph_nodes: List[SearchGraphNodeResult]
+    citations: List[SearchCitationResult]
+    graph_edges: List[SearchGraphEdgeResult]
+

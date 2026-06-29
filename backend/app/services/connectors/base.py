@@ -4,7 +4,10 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
-from app.models.models import GovernmentSource, GovernmentUpdate, GovernmentUpdateVersion, ConnectorSyncLog
+from app.models.models import GovernmentSource, GovernmentUpdate, GovernmentUpdateVersion, ConnectorSyncLog, Organization
+from app.services.citation import CitationEngine
+from app.services.graph import GraphService
+
 
 class BaseConnector(ABC):
     @abstractmethod
@@ -185,6 +188,20 @@ class BaseConnector(ABC):
                     )
                     db.add(ver_log)
                     db.commit()
+                    
+                    # Phase 4 Ingestion: Extract citations and build graph
+                    orgs = db.query(Organization).filter(Organization.deleted_at.is_(None)).all()
+                    for org in orgs:
+                        CitationEngine.extract_and_create_citations(
+                            db=db,
+                            organization_id=org.id,
+                            text=self.normalize(raw_text),
+                            source_type="GOVERNMENT_UPDATE",
+                            government_update_id=existing_update.id,
+                            source_url=existing_update.source_url
+                        )
+                    GraphService.build_graph_for_government_update(db, existing_update.id)
+                    
                     docs_downloaded += 1
                     source.version_count += 1
                 else:
@@ -225,6 +242,20 @@ class BaseConnector(ABC):
                     )
                     db.add(ver_log)
                     db.commit()
+                    
+                    # Phase 4 Ingestion: Extract citations and build graph
+                    orgs = db.query(Organization).filter(Organization.deleted_at.is_(None)).all()
+                    for org in orgs:
+                        CitationEngine.extract_and_create_citations(
+                            db=db,
+                            organization_id=org.id,
+                            text=normalized_markdown,
+                            source_type="GOVERNMENT_UPDATE",
+                            government_update_id=new_update.id,
+                            source_url=new_update.source_url
+                        )
+                    GraphService.build_graph_for_government_update(db, new_update.id)
+                    
                     docs_downloaded += 1
                     source.total_documents_count += 1
 

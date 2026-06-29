@@ -18,6 +18,9 @@ from app.api.v1.compliance import router as compliance_router
 from app.api.v1.search import router as search_router
 from app.api.v1.integrations import router as integrations_router
 from app.api.v1.observability import router as observability_router
+from app.api.v1.citations import router as citations_router
+from app.api.v1.graph import router as graph_router
+
 
 app = FastAPI(
     title="CA Intelligence API",
@@ -59,6 +62,9 @@ app.include_router(compliance_router, prefix="/api/v1/compliance", tags=["Compli
 app.include_router(search_router, prefix="/api/v1/search", tags=["Universal Search"])
 app.include_router(integrations_router, prefix="/api/v1/integrations", tags=["AKKC Integrations"])
 app.include_router(observability_router, prefix="/api/v1/observability", tags=["Observability"])
+app.include_router(citations_router, prefix="/api/v1/citations", tags=["Citations"])
+app.include_router(graph_router, prefix="/api/v1/graph", tags=["Knowledge Graph"])
+
 
 @app.get("/")
 def read_root():

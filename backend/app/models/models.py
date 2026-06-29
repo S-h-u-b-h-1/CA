@@ -431,13 +431,33 @@ class Citation(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
-    source_document_id = Column(String(36), nullable=False)  # Can reference raw_documents or government_updates
-    target_entity_id = Column(String(36), ForeignKey("entities.id"), nullable=False)
+    source_document_id = Column(String(36), nullable=True)  # Can reference raw_documents or government_updates
+    target_entity_id = Column(String(36), ForeignKey("entities.id"), nullable=True)
     text_reference = Column(Text, nullable=False)
     version = Column(Integer, default=1, nullable=False)
     status = Column(String(50), default="ACTIVE", nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Phase 4 extensions
+    source_type = Column(String(50), nullable=True)  # CLIENT_DOCUMENT, GOVERNMENT_UPDATE, etc.
+    government_update_id = Column(String(36), nullable=True)
+    client_id = Column(String(36), nullable=True)
+    page_number = Column(Integer, nullable=True)
+    paragraph_number = Column(Integer, nullable=True)
+    line_start = Column(Integer, nullable=True)
+    line_end = Column(Integer, nullable=True)
+    section_reference = Column(String(255), nullable=True)
+    act_reference = Column(String(255), nullable=True)
+    rule_reference = Column(String(255), nullable=True)
+    circular_number = Column(String(255), nullable=True)
+    notification_number = Column(String(255), nullable=True)
+    judgment_reference = Column(String(255), nullable=True)
+    quote_text = Column(Text, nullable=True)
+    normalized_text = Column(Text, nullable=True)
+    source_url = Column(String(512), nullable=True)
+    confidence_score = Column(Float, default=1.0, nullable=True)
+
 
 
 class DocumentVersion(Base):
@@ -623,3 +643,67 @@ class ConnectorSyncLog(Base):
     documents_downloaded = Column(Integer, default=0, nullable=False)
     error_message = Column(Text, nullable=True)
     duration_ms = Column(Integer, default=0, nullable=False)
+
+
+class CitationVerification(Base):
+    __tablename__ = "citation_verifications"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    citation_id = Column(String(36), ForeignKey("citations.id"), nullable=False)
+    status = Column(String(50), default="PENDING", nullable=False)  # VERIFIED, PARTIALLY_VERIFIED, FAILED, PENDING
+    details_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class EntityAlias(Base):
+    __tablename__ = "entity_aliases"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    entity_id = Column(String(36), ForeignKey("entities.id"), nullable=False)
+    alias_text = Column(String(512), nullable=False)
+    alias_type = Column(String(100), default="EXACT", nullable=False)  # EXACT, NORMALIZED, FUZZY, IDENTIFIER
+    confidence_score = Column(Float, default=1.0, nullable=False)
+    created_by = Column(String(100), default="SYSTEM", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class GraphBuildJob(Base):
+    __tablename__ = "graph_build_jobs"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    source_type = Column(String(50), nullable=False)  # DOCUMENT, GOVERNMENT_UPDATE
+    source_id = Column(String(36), nullable=False)
+    status = Column(String(50), default="PENDING", nullable=False)  # PENDING, PROCESSING, SUCCESS, FAILED
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class LegalReference(Base):
+    __tablename__ = "legal_references"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    reference_type = Column(String(50), nullable=False)  # SECTION, RULE, CIRCULAR, NOTIFICATION, etc.
+    value = Column(String(255), nullable=False)
+    metadata_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SourceClaim(Base):
+    __tablename__ = "source_claims"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    claim_text = Column(Text, nullable=False)
+    citation_id = Column(String(36), ForeignKey("citations.id"), nullable=False)
+    verification_status = Column(String(50), default="PENDING", nullable=False)  # VERIFIED, PARTIALLY_VERIFIED, FAILED, PENDING
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+

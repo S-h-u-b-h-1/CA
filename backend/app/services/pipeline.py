@@ -16,6 +16,10 @@ from app.services.storage import get_storage_provider
 from app.services.ocr import get_ocr_provider
 from app.services.embeddings import get_embedding_provider
 from app.services.parsers import ParserRegistry
+from app.services.graph import GraphService
+from app.services.citation import CitationEngine
+from app.services.extractor import LegalReferenceExtractor
+
 
 # Regex helpers for Indian regulatory identifiers
 PAN_REGEX = r"\b[A-Z]{5}[0-9]{4}[A-Z]{1}\b"
@@ -140,23 +144,8 @@ class DocumentPipelineOrchestrator:
             if ocr_text:
                 extracted_entities = DocumentPipelineOrchestrator.extract_entities(ocr_text)
                 for etype, evalue in extracted_entities:
-                    # Deduplicate entity lookup under organization
-                    ent = db.query(Entity).filter(
-                        Entity.organization_id == raw_doc.organization_id,
-                        Entity.entity_type == etype,
-                        Entity.value == evalue,
-                        Entity.status == "ACTIVE"
-                    ).first()
-
-                    if not ent:
-                        ent = Entity(
-                            organization_id=raw_doc.organization_id,
-                            entity_type=etype,
-                            value=evalue,
-                            metadata_json={"extracted_from_doc": raw_doc_id}
-                        )
-                        db.add(ent)
-                        db.flush()
+                    # Deduplicate and resolve entity using GraphService
+                    ent = GraphService.resolve_entity(db, raw_doc.organization_id, etype, evalue)
 
                     # Connect raw document to entity via Relationship
                     rel = db.query(EntityRelationship).filter(
@@ -176,15 +165,19 @@ class DocumentPipelineOrchestrator:
                         db.add(rel)
 
                     # Add Citation log
-                    cit = Citation(
+                    CitationEngine.create_citation(
+                        db=db,
                         organization_id=raw_doc.organization_id,
+                        source_type="CLIENT_DOCUMENT",
                         source_document_id=raw_doc_id,
+                        client_id=raw_doc.client_id,
                         target_entity_id=ent.id,
-                        text_reference=f"Extracted {etype} match: {evalue}"
+                        text_reference=f"Extracted {etype} match: {evalue}",
+                        quote_text=evalue,
+                        confidence_score=1.0
                     )
-                    db.add(cit)
 
-            # 4. Embeddings Generation
+            # 4. Embeddings Generation & Citation chunks
             pipeline.current_step = "EMBEDDINGS"
             db.commit()
 
@@ -219,60 +212,23 @@ class DocumentPipelineOrchestrator:
                         )
                         db.add(emb)
 
+                        # Extract legal references and create citations for this chunk
+                        CitationEngine.extract_and_create_citations(
+                            db=db,
+                            organization_id=raw_doc.organization_id,
+                            text=para,
+                            source_type="CLIENT_DOCUMENT",
+                            source_document_id=raw_doc_id,
+                            client_id=raw_doc.client_id,
+                            paragraph_number=idx
+                        )
+
             # 5. Knowledge Graph Node & Edges
             pipeline.current_step = "GRAPH"
             db.commit()
 
-            # Create Document Node
-            doc_node = db.query(KnowledgeGraphNode).filter(
-                KnowledgeGraphNode.organization_id == raw_doc.organization_id,
-                KnowledgeGraphNode.node_type == "RawDocument",
-                KnowledgeGraphNode.label == raw_doc.name
-            ).first()
-
-            if not doc_node:
-                doc_node = KnowledgeGraphNode(
-                    organization_id=raw_doc.organization_id,
-                    node_type="RawDocument",
-                    label=raw_doc.name,
-                    properties_json={"file_size": raw_doc.file_size, "mime": raw_doc.mime_type}
-                )
-                db.add(doc_node)
-                db.flush()
-
-            # Create Client Node if exists
-            if raw_doc.client_id:
-                client_node = db.query(KnowledgeGraphNode).filter(
-                    KnowledgeGraphNode.organization_id == raw_doc.organization_id,
-                    KnowledgeGraphNode.node_type == "Client",
-                    KnowledgeGraphNode.properties_json["client_id"].as_string() == raw_doc.client_id
-                ).first()
-
-                if not client_node:
-                    client_node = KnowledgeGraphNode(
-                        organization_id=raw_doc.organization_id,
-                        node_type="Client",
-                        label=f"Client_{raw_doc.client_id[:8]}",
-                        properties_json={"client_id": raw_doc.client_id}
-                    )
-                    db.add(client_node)
-                    db.flush()
-
-                # Add Filed By/Belongs To Edge
-                edge = db.query(KnowledgeGraphEdge).filter(
-                    KnowledgeGraphEdge.organization_id == raw_doc.organization_id,
-                    KnowledgeGraphEdge.source_node_id == client_node.id,
-                    KnowledgeGraphEdge.target_node_id == doc_node.id,
-                    KnowledgeGraphEdge.relationship == "Filed"
-                ).first()
-                if not edge:
-                    edge = KnowledgeGraphEdge(
-                        organization_id=raw_doc.organization_id,
-                        source_node_id=client_node.id,
-                        target_node_id=doc_node.id,
-                        relationship="Filed"
-                    )
-                    db.add(edge)
+            # Build full knowledge graph connections for the document
+            GraphService.build_graph_for_document(db, raw_doc.organization_id, raw_doc_id)
 
             # Complete Pipeline
             pipeline.current_step = "COMPLETE"

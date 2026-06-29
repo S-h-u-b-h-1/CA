@@ -3,8 +3,9 @@ from sqlalchemy import or_
 from app.models.models import (
     Client, Document, Note,
     StructuredInvoiceData, StructuredNoticeData,
-    KnowledgeGraphNode, KnowledgeChunk, Entity
+    KnowledgeGraphNode, KnowledgeChunk, Entity, Citation, KnowledgeGraphEdge
 )
+
 
 def universal_search(db: Session, organization_id: str, query: str) -> dict:
     if not query:
@@ -15,8 +16,11 @@ def universal_search(db: Session, organization_id: str, query: str) -> dict:
             "structured_invoices": [],
             "structured_notices": [],
             "knowledge_chunks": [],
-            "graph_nodes": []
+            "graph_nodes": [],
+            "citations": [],
+            "graph_edges": []
         }
+
 
     like_query = f"%{query}%"
 
@@ -92,7 +96,27 @@ def universal_search(db: Session, organization_id: str, query: str) -> dict:
         )
     ).limit(10).all()
 
+    # 8. Search Citations
+    citations = db.query(Citation).filter(
+        Citation.organization_id == organization_id,
+        Citation.status == "ACTIVE",
+        or_(
+            Citation.section_reference.ilike(like_query),
+            Citation.act_reference.ilike(like_query),
+            Citation.rule_reference.ilike(like_query),
+            Citation.quote_text.ilike(like_query),
+            Citation.text_reference.ilike(like_query)
+        )
+    ).limit(10).all()
+
+    # 9. Search Graph Edges
+    graph_edges = db.query(KnowledgeGraphEdge).filter(
+        KnowledgeGraphEdge.organization_id == organization_id,
+        KnowledgeGraphEdge.relationship.ilike(like_query)
+    ).limit(10).all()
+
     return {
+
         "clients": [
             {
                 "id": c.id,
@@ -162,5 +186,27 @@ def universal_search(db: Session, organization_id: str, query: str) -> dict:
                 "properties": gn.properties_json
             }
             for gn in graph_nodes
+        ],
+        "citations": [
+            {
+                "id": c.id,
+                "source_type": c.source_type or "CLIENT_DOCUMENT",
+                "quote_text": c.quote_text,
+                "section_reference": c.section_reference,
+                "act_reference": c.act_reference,
+                "text_reference": c.text_reference,
+                "confidence_score": c.confidence_score or 1.0
+            }
+            for c in citations
+        ],
+        "graph_edges": [
+            {
+                "id": ge.id,
+                "source_node_id": ge.source_node_id,
+                "target_node_id": ge.target_node_id,
+                "relationship": ge.relationship
+            }
+            for ge in graph_edges
         ]
     }
+
