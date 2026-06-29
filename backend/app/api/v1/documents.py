@@ -5,12 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, s
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.core.database import get_db
-from app.models.models import Document, User, AuditLog, DocumentProcessingJob, DocumentTextChunk
+from app.models.models import Document, User, AuditLog, DocumentProcessingJob, DocumentTextChunk, RawDocument, DocumentVersion
 from app.schemas.schemas import DocumentResponse, DocumentUpdate
 from app.api.deps import get_current_user
 from app.services.storage import get_storage_provider
 from app.services.ocr import get_ocr_provider
 from app.services.embeddings import get_embedding_provider
+from app.services.deduplication import DeduplicationEngine
+from app.services.pipeline import DocumentPipelineOrchestrator
 
 router = APIRouter()
 
@@ -128,25 +130,65 @@ async def upload_document(
             detail="File size exceeds maximum limit of 10MB"
         )
 
-    # 3. Securely name and save file
+    # 3. Compute hashes for deduplication
+    hashes = DeduplicationEngine.calculate_file_hashes(file_content)
+
+    # 4. Save file via storage provider
     safe_filename = f"{uuid.uuid4()}{file_ext}"
     storage = get_storage_provider()
     file_path = storage.save_file(safe_filename, file_content)
 
-    # 4. Save metadata to DB
-    doc = Document(
-        organization_id=current_user.organization_id,
-        client_id=client_id,
-        name=file.filename,
-        file_path=file_path,
-        file_size=file_size,
-        mime_type=file.content_type or "application/octet-stream",
-        category=category,
-        processing_status="PENDING",
-        embedding_status="PENDING"
+    # 5. Check if duplicate exists under the same organization
+    existing_raw = DeduplicationEngine.check_duplicate_by_sha256(
+        db, current_user.organization_id, hashes["sha256"]
     )
-    db.add(doc)
-    db.flush()
+
+    if existing_raw:
+        # Create a new version log for this document
+        DeduplicationEngine.create_document_version(
+            db,
+            current_user.organization_id,
+            existing_raw,
+            file_path,
+            f"Duplicate file uploaded: {file.filename}. Incremented version."
+        )
+        raw_doc = existing_raw
+    else:
+        # Create new RawDocument entry
+        raw_doc = RawDocument(
+            organization_id=current_user.organization_id,
+            client_id=client_id,
+            name=file.filename,
+            file_path=file_path,
+            file_size=file_size,
+            mime_type=file.content_type or "application/octet-stream",
+            sha256_hash=hashes["sha256"],
+            md5_hash=hashes["md5"],
+            similarity_hash=hashes["similarity_hash"],
+            file_fingerprint=hashes["file_fingerprint"],
+            version=1,
+            status="ACTIVE"
+        )
+        db.add(raw_doc)
+        db.flush()
+
+    # 6. Save legacy Document entry to maintain backwards compatibility
+    doc = db.query(Document).filter(Document.id == raw_doc.id).first()
+    if not doc:
+        doc = Document(
+            id=raw_doc.id,  # Link RawDocument UUID directly to Document UUID
+            organization_id=current_user.organization_id,
+            client_id=client_id,
+            name=file.filename,
+            file_path=file_path,
+            file_size=file_size,
+            mime_type=file.content_type or "application/octet-stream",
+            category=category,
+            processing_status="PENDING",
+            embedding_status="PENDING"
+        )
+        db.add(doc)
+        db.flush()
 
     # Log action
     audit = AuditLog(
@@ -155,14 +197,14 @@ async def upload_document(
         action="DOCUMENT_UPLOAD",
         entity_type="DOCUMENT",
         entity_id=doc.id,
-        details=f"Uploaded file: {file.filename} as {category}"
+        details=f"Uploaded file: {file.filename} as {category}. Deduplication status: {'Duplicate/NewVersion' if existing_raw else 'Unique'}"
     )
     db.add(audit)
     db.commit()
 
-    # 5. Trigger Background processing pipeline
+    # 7. Trigger Background V2 processing pipeline
     from app.core.database import SessionLocal
-    background_tasks.add_task(process_document_pipeline_task, doc.id, SessionLocal)
+    background_tasks.add_task(DocumentPipelineOrchestrator.process_document, SessionLocal(), raw_doc.id)
 
     db.refresh(doc)
     return doc

@@ -1,10 +1,22 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
-from app.models.models import Client, Document, Note
+from app.models.models import (
+    Client, Document, Note,
+    StructuredInvoiceData, StructuredNoticeData,
+    KnowledgeGraphNode, KnowledgeChunk, Entity
+)
 
 def universal_search(db: Session, organization_id: str, query: str) -> dict:
     if not query:
-        return {"clients": [], "documents": [], "notes": []}
+        return {
+            "clients": [], 
+            "documents": [], 
+            "notes": [],
+            "structured_invoices": [],
+            "structured_notices": [],
+            "knowledge_chunks": [],
+            "graph_nodes": []
+        }
 
     like_query = f"%{query}%"
 
@@ -43,6 +55,43 @@ def universal_search(db: Session, organization_id: str, query: str) -> dict:
         )
     ).limit(10).all()
 
+    # 4. Search Structured Invoices
+    invoices = db.query(StructuredInvoiceData).filter(
+        StructuredInvoiceData.organization_id == organization_id,
+        or_(
+            StructuredInvoiceData.vendor_name.ilike(like_query),
+            StructuredInvoiceData.invoice_number.ilike(like_query),
+            StructuredInvoiceData.GSTIN.ilike(like_query),
+            StructuredInvoiceData.place_of_supply.ilike(like_query)
+        )
+    ).limit(10).all()
+
+    # 5. Search Structured Notices
+    notices = db.query(StructuredNoticeData).filter(
+        StructuredNoticeData.organization_id == organization_id,
+        or_(
+            StructuredNoticeData.din.ilike(like_query),
+            StructuredNoticeData.section.ilike(like_query),
+            StructuredNoticeData.assessment_year.ilike(like_query),
+            StructuredNoticeData.issuing_authority.ilike(like_query)
+        )
+    ).limit(10).all()
+
+    # 6. Search Knowledge Chunks
+    chunks = db.query(KnowledgeChunk).filter(
+        KnowledgeChunk.organization_id == organization_id,
+        KnowledgeChunk.text_content.ilike(like_query)
+    ).limit(10).all()
+
+    # 7. Search Graph Nodes
+    graph_nodes = db.query(KnowledgeGraphNode).filter(
+        KnowledgeGraphNode.organization_id == organization_id,
+        or_(
+            KnowledgeGraphNode.label.ilike(like_query),
+            KnowledgeGraphNode.node_type.ilike(like_query)
+        )
+    ).limit(10).all()
+
     return {
         "clients": [
             {
@@ -74,5 +123,44 @@ def universal_search(db: Session, organization_id: str, query: str) -> dict:
                 "created_at": n.created_at
             }
             for n in notes
+        ],
+        "structured_invoices": [
+            {
+                "id": inv.id,
+                "vendor_name": inv.vendor_name,
+                "invoice_number": inv.invoice_number,
+                "total_amount": inv.total_amount,
+                "GSTIN": inv.GSTIN,
+                "created_at": inv.created_at
+            }
+            for inv in invoices
+        ],
+        "structured_notices": [
+            {
+                "id": notc.id,
+                "din": notc.din,
+                "section": notc.section,
+                "assessment_year": notc.assessment_year,
+                "tax_demand_amount": notc.tax_demand_amount,
+                "created_at": notc.created_at
+            }
+            for notc in notices
+        ],
+        "knowledge_chunks": [
+            {
+                "id": ch.id,
+                "text_content": ch.text_content[:200] + ("..." if len(ch.text_content) > 200 else ""),
+                "chunk_index": ch.chunk_index
+            }
+            for ch in chunks
+        ],
+        "graph_nodes": [
+            {
+                "id": gn.id,
+                "node_type": gn.node_type,
+                "label": gn.label,
+                "properties": gn.properties_json
+            }
+            for gn in graph_nodes
         ]
     }

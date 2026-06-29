@@ -255,7 +255,38 @@ class SearchNoteResult(BaseModel):
     client_id: Optional[str] = None
     created_at: datetime
 
+class SearchInvoiceResult(BaseModel):
+    id: str
+    vendor_name: Optional[str] = None
+    invoice_number: Optional[str] = None
+    total_amount: Optional[float] = None
+    GSTIN: Optional[str] = None
+    created_at: datetime
+
+class SearchNoticeResult(BaseModel):
+    id: str
+    din: Optional[str] = None
+    section: Optional[str] = None
+    assessment_year: Optional[str] = None
+    tax_demand_amount: Optional[float] = None
+    created_at: datetime
+
+class SearchChunkResult(BaseModel):
+    id: str
+    text_content: str
+    chunk_index: int
+
+class SearchGraphNodeResult(BaseModel):
+    id: str
+    node_type: str
+    label: str
+    properties: Optional[Dict[str, Any]] = None
+
 class SearchResult(BaseModel):
     clients: List[SearchClientResult]
     documents: List[SearchDocumentResult]
     notes: List[SearchNoteResult]
+    structured_invoices: List[SearchInvoiceResult]
+    structured_notices: List[SearchNoticeResult]
+    knowledge_chunks: List[SearchChunkResult]
+    graph_nodes: List[SearchGraphNodeResult]
