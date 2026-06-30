@@ -39,18 +39,42 @@ class Form26ASParser(BaseParser):
         pan_match = re.search(r"PAN(?:\s+of\s+Taxpayer)?\s*[:\-]?\s*([A-Z]{5}[0-9]{4}[A-Z]{1})", text, re.IGNORECASE)
         if pan_match:
             facts["pan"] = pan_match.group(1).upper()
+        else:
+            pan_match_fallback = re.search(r"(?:Permanent\s+Account\s+Number|PAN)\s*\(?PAN\)?\s*([A-Z]{5}[0-9]{4}[A-Z]{1})", text, re.IGNORECASE)
+            if pan_match_fallback:
+                facts["pan"] = pan_match_fallback.group(1).upper()
+            else:
+                pan_list = re.findall(r"\b[A-Z]{5}[0-9]{4}[A-Z]{1}\b", text)
+                if pan_list:
+                    facts["pan"] = pan_list[0].upper()
             
         ay_match = re.search(r"Assessment\s+Year\s*[:\-]?\s*([0-9]{4}-[0-9]{2,4})", text, re.IGNORECASE)
         if ay_match:
             facts["assessment_year"] = ay_match.group(1)
+        else:
+            ay_list = re.findall(r"\b(?:Assessment\s+Year|AY)\s*[:\-]?\s*(\d{4}-\d{2,4})", text, re.IGNORECASE)
+            if ay_list:
+                facts["assessment_year"] = ay_list[0]
             
         fy_match = re.search(r"Financial\s+Year\s*[:\-]?\s*([0-9]{4}-[0-9]{2,4})", text, re.IGNORECASE)
         if fy_match:
             facts["financial_year"] = fy_match.group(1)
+        else:
+            fy_list = re.findall(r"\b(?:Financial\s+Year|FY)\s*[:\-]?\s*(\d{4}-\d{2,4})", text, re.IGNORECASE)
+            if fy_list:
+                facts["financial_year"] = fy_list[0]
 
         name_match = re.search(r"(?:Name\s+of\s+Taxpayer|Assessee\s+Name)\s*[:\-]?\s*([^\n]+)", text, re.IGNORECASE)
         if name_match:
             facts["taxpayer_name"] = name_match.group(1).strip()
+        else:
+            name_match_fallback = re.search(r"Name\s+of\s+(?:Assessee|Taxpayer|Taxpayer/Assessee)\s*[:\-]?\s*([^\n|]+)", text, re.IGNORECASE)
+            if name_match_fallback:
+                name_val = name_match_fallback.group(1).strip()
+                for marker in ["Assessment Year", "Financial Year", "Current Status", "PAN"]:
+                    if marker in name_val:
+                        name_val = name_val.split(marker)[0].strip()
+                facts["taxpayer_name"] = name_val
 
         # 2. Extract TDS Entries / Deductors
         deductor_regex = r"(?:Deductor\s+Name|Name\s+of\s+Deductor)\s*[:\-]?\s*([^\n|]+?)\s*(?:TAN|TAN\s+of\s+Deductor)\s*[:\-]?\s*([A-Z]{4}[0-9]{5}[A-Z]{1})"
@@ -64,12 +88,44 @@ class Form26ASParser(BaseParser):
                 "total_tcs": 0.0
             })
 
+        # Fallback Deductor row parser (for layouts where headers are separate from data rows)
+        deductor_regex_fallback = r"\b([A-Z0-9\s().&,-]{3,50})\s+([A-Z]{4}[0-9]{5}[A-Z]{1})\s+([0-9,]+(?:\.[0-9]+)?)\s+([0-9,]+(?:\.[0-9]+)?)\s+([0-9,]+(?:\.[0-9]+)?)"
+        for m in re.finditer(deductor_regex_fallback, text):
+            d_name = m.group(1).strip()
+            d_name = re.sub(r"^\d+\s+", "", d_name).strip()
+            if "NAME" in d_name.upper() or "DEDUCTOR" in d_name.upper() or "TOTAL" in d_name.upper():
+                continue
+            d_tan = m.group(2).upper()
+            amt_paid = float(m.group(3).replace(",", ""))
+            tds_ded = float(m.group(4).replace(",", ""))
+            if not any(d["deductor_tan"] == d_tan for d in facts["deductors"]):
+                facts["deductors"].append({
+                    "deductor_name": d_name,
+                    "deductor_tan": d_tan,
+                    "total_tds": tds_ded,
+                    "total_tcs": 0.0
+                })
+
         # Regex for transaction detail rows: Section 194C, 194J, etc.
         tds_entry_regex = r"(?:Section|Sec)\s+([0-9A-Z]{4,5})\s+(?:Amount\s+Paid|Amount\s+Credited)\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)\s+(?:Tax\s+Deducted|TDS)\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)"
         for m in re.finditer(tds_entry_regex, text, re.IGNORECASE):
             sec = m.group(1).strip()
             amt_paid = float(m.group(2).replace(",", ""))
             tds = float(m.group(3).replace(",", ""))
+            facts["tds_entries"].append({
+                "section": sec,
+                "amount_paid": amt_paid,
+                "tax_deducted": tds,
+                "tax_deposited": tds
+            })
+            facts["total_tds"] += tds
+
+        # Fallback TDS entries
+        tds_entry_regex_fallback = r"\b([0-9]{3}[A-Z]?)\s+(\d{1,2}-[A-Za-z]{3}-\d{4})\s+([A-Z])\s+(\d{1,2}-[A-Za-z]{3}-\d{4})\s+([a-zA-Z0-9-]*)\s+([0-9.-]+)\s+([0-9.-]+)\s+([0-9.-]+)"
+        for m in re.finditer(tds_entry_regex_fallback, text):
+            sec = m.group(1).strip()
+            amt_paid = float(m.group(6).replace(",", ""))
+            tds = float(m.group(7).replace(",", ""))
             facts["tds_entries"].append({
                 "section": sec,
                 "amount_paid": amt_paid,
