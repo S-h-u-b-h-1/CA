@@ -412,6 +412,8 @@ class DocumentPipelineOrchestrator:
         
         if "gst notice" in name_lower or "drc-07" in text_lower or ("gst" in text_lower and "notice" in text_lower):
             return "GST Notice"
+        elif "tis" in name_lower or "taxpayer information summary" in text_lower:
+            return "TIS"
         elif "26as" in name_lower or "26as" in text_lower:
             return "Form 26AS"
         elif (
@@ -427,8 +429,6 @@ class DocumentPipelineOrchestrator:
             "securities" in text_lower
         ):
             return "AIS"
-        elif "tis" in name_lower or "taxpayer information summary" in text_lower:
-            return "TIS"
         elif "form 16" in name_lower or "form16" in name_lower or "form no. 16" in text_lower:
             return "Form 16"
         elif "itr" in name_lower and "ack" in name_lower or "acknowledgement" in text_lower:
