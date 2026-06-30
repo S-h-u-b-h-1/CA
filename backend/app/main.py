@@ -82,6 +82,10 @@ def run_schema_migration(db):
 @app.on_event("startup")
 def startup_event():
     try:
+        from app.core.database import engine
+        from app.models.models import Base
+        Base.metadata.create_all(bind=engine)
+        
         db = SessionLocal()
         try:
             run_schema_migration(db)

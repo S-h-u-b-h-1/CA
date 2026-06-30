@@ -901,3 +901,91 @@ class DocumentAISummary(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+
+class ClientTaxProfile(Base):
+    __tablename__ = "client_tax_profiles"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=False)
+    pan = Column(String(10), nullable=True)
+    taxpayer_name = Column(String(255), nullable=True)
+    assessment_year = Column(String(10), nullable=False)
+    financial_year = Column(String(10), nullable=True)
+    latest_upload_date = Column(DateTime, nullable=True)
+    processing_status = Column(String(50), default="PENDING")
+    confidence = Column(Float, default=1.0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ClientTaxSummary(Base):
+    __tablename__ = "client_tax_summaries"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=False)
+    assessment_year = Column(String(10), nullable=False)
+    financial_year = Column(String(10), nullable=True)
+    total_tds = Column(Float, default=0.0)
+    total_reported_income = Column(Float, default=0.0)
+    interest_income = Column(Float, default=0.0)
+    dividend_income = Column(Float, default=0.0)
+    salary_income = Column(Float, default=0.0)
+    securities_transactions = Column(Float, default=0.0)
+    mutual_fund_transactions = Column(Float, default=0.0)
+    property_transactions = Column(Float, default=0.0)
+    sft_transactions = Column(Float, default=0.0)
+    other_income = Column(Float, default=0.0)
+    refund_amount = Column(Float, default=0.0)
+    demand_amount = Column(Float, default=0.0)
+    deductor_count = Column(Integer, default=0)
+    ais_category_count = Column(Integer, default=0)
+    high_value_transactions = Column(Integer, default=0)
+    documents_processed = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ClientTaxInsight(Base):
+    __tablename__ = "client_tax_insights"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=False)
+    assessment_year = Column(String(10), nullable=False)
+    severity = Column(String(50), default="INFO")
+    description = Column(Text, nullable=False)
+    supporting_documents = Column(JSON, nullable=True)
+    supporting_records = Column(JSON, nullable=True)
+    confidence = Column(Float, default=1.0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class DocumentRelationship(Base):
+    __tablename__ = "document_relationships"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=False)
+    source_document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False)
+    target_document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False)
+    relationship_type = Column(String(100), default="CORRELATED")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class DocumentMatch(Base):
+    __tablename__ = "document_matches"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=False)
+    assessment_year = Column(String(10), nullable=False)
+    match_type = Column(String(100), default="TDS_MATCH")
+    description = Column(Text, nullable=False)
+    amount = Column(Float, nullable=True)
+    source_record_id = Column(String(36), nullable=True)
+    target_record_id = Column(String(36), nullable=True)
+    status = Column(String(50), default="MATCHED")
+    created_at = Column(DateTime, default=datetime.utcnow)
+

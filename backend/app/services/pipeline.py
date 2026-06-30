@@ -308,6 +308,16 @@ class DocumentPipelineOrchestrator:
             pipeline.status = "SUCCESS"
             db.commit()
 
+            try:
+                from app.models.models import Document
+                from app.services.tax_intelligence import TaxIntelligenceService
+                doc_record = db.query(Document).filter(Document.id == raw_doc_id).first()
+                if doc_record and doc_record.client_id:
+                    ay = structured_facts.get("assessment_year") or "2025-26"
+                    TaxIntelligenceService.recompute(db, doc_record.client_id, ay)
+            except Exception as e:
+                print(f"Warning: Client Tax Intelligence recompute failed: {e}")
+
             # Sync V1 legacy document status if exists
             from app.models.models import Document
             legacy_doc = db.query(Document).filter(Document.id == raw_doc.id).first()
