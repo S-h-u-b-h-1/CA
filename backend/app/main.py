@@ -79,6 +79,32 @@ def run_schema_migration(db):
         except Exception:
             db.rollback()
 
+    columns_clients = [
+        ("assigned_manager", "VARCHAR(255)"),
+        ("assigned_partner", "VARCHAR(255)")
+    ]
+    for col_name, col_type in columns_clients:
+        try:
+            db.execute(text(f"ALTER TABLE clients ADD COLUMN {col_name} {col_type}"))
+            db.commit()
+            print(f"Schema Migration: Column '{col_name}' successfully added to 'clients'.")
+        except Exception:
+            db.rollback()
+
+    columns_notes = [
+        ("tags", "VARCHAR(255)"),
+        ("is_pinned", "BOOLEAN DEFAULT FALSE"),
+        ("attachments_json", "JSON"),
+        ("mentions_json", "JSON")
+    ]
+    for col_name, col_type in columns_notes:
+        try:
+            db.execute(text(f"ALTER TABLE notes ADD COLUMN {col_name} {col_type}"))
+            db.commit()
+            print(f"Schema Migration: Column '{col_name}' successfully added to 'notes'.")
+        except Exception:
+            db.rollback()
+
 # Startup Seeding Events
 @app.on_event("startup")
 def startup_event():

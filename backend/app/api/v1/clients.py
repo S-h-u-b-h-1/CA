@@ -537,3 +537,271 @@ def get_client_itr_verification(
             "status": r.status
         } for r in results
     ]
+
+
+from app.schemas.workspace import (
+    ClientWorkspaceResponse, ClientTaskSchema, ClientTaskCreate,
+    ClientNoteSchema, ClientNoteCreate, ClientTimelineSchema, ClientTimelineCreate
+)
+from app.services.workspace import WorkspaceService
+from app.models.models import ClientTask, ClientTimelineEvent, Note
+import json
+
+@router.get("/{client_id}/workspace", response_model=ClientWorkspaceResponse)
+def get_client_workspace(
+    client_id: str,
+    assessment_year: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    client = db.query(Client).filter(
+        Client.id == client_id,
+        Client.organization_id == current_user.organization_id,
+        Client.deleted_at.is_(None)
+    ).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    
+    ay_val = assessment_year or "2025-26"
+    try:
+        data = WorkspaceService.get_workspace_data(db, client_id, ay_val)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/{client_id}/tasks", response_model=ClientTaskSchema)
+def create_workspace_task(
+    client_id: str,
+    payload: ClientTaskCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    client = db.query(Client).filter(
+        Client.id == client_id,
+        Client.organization_id == current_user.organization_id,
+        Client.deleted_at.is_(None)
+    ).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+        
+    task = ClientTask(
+        organization_id=current_user.organization_id,
+        client_id=client_id,
+        task_name=payload.task_name,
+        description=payload.description,
+        status=payload.status or "PENDING",
+        linked_to=payload.linked_to,
+        linked_id=payload.linked_id,
+        due_date=payload.due_date
+    )
+    db.add(task)
+    
+    # Log timeline event
+    evt = ClientTimelineEvent(
+        organization_id=current_user.organization_id,
+        client_id=client_id,
+        event_type="TASK_CREATED",
+        title=f"Task Created: {payload.task_name}",
+        description=payload.description
+    )
+    db.add(evt)
+    db.commit()
+    db.refresh(task)
+    return task
+
+@router.put("/{client_id}/tasks/{task_id}", response_model=ClientTaskSchema)
+def update_workspace_task(
+    client_id: str,
+    task_id: str,
+    payload: ClientTaskCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    task = db.query(ClientTask).filter(
+        ClientTask.id == task_id,
+        ClientTask.client_id == client_id,
+        ClientTask.organization_id == current_user.organization_id
+    ).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+        
+    old_status = task.status
+    task.task_name = payload.task_name
+    task.description = payload.description
+    if payload.status:
+        task.status = payload.status
+    task.linked_to = payload.linked_to
+    task.linked_id = payload.linked_id
+    task.due_date = payload.due_date
+    
+    # If completed, log timeline
+    if payload.status == "COMPLETED" and old_status != "COMPLETED":
+        evt = ClientTimelineEvent(
+            organization_id=current_user.organization_id,
+            client_id=client_id,
+            event_type="TASK_COMPLETED",
+            title=f"Task Completed: {task.task_name}",
+            description=task.description
+        )
+        db.add(evt)
+        
+    db.commit()
+    db.refresh(task)
+    return task
+
+@router.delete("/{client_id}/tasks/{task_id}")
+def delete_workspace_task(
+    client_id: str,
+    task_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    task = db.query(ClientTask).filter(
+        ClientTask.id == task_id,
+        ClientTask.client_id == client_id,
+        ClientTask.organization_id == current_user.organization_id
+    ).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    db.delete(task)
+    db.commit()
+    return {"message": "Task deleted successfully"}
+
+@router.post("/{client_id}/notes", response_model=ClientNoteSchema)
+def create_workspace_note(
+    client_id: str,
+    payload: ClientNoteCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    client = db.query(Client).filter(
+        Client.id == client_id,
+        Client.organization_id == current_user.organization_id,
+        Client.deleted_at.is_(None)
+    ).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+        
+    note = Note(
+        organization_id=current_user.organization_id,
+        client_id=client_id,
+        title=payload.title,
+        content=payload.content,
+        created_by=current_user.id,
+        tags=payload.tags,
+        is_pinned=payload.is_pinned or False,
+        attachments_json=json.dumps(payload.attachments) if payload.attachments else None,
+        mentions_json=json.dumps(payload.mentions) if payload.mentions else None
+    )
+    db.add(note)
+    
+    evt = ClientTimelineEvent(
+        organization_id=current_user.organization_id,
+        client_id=client_id,
+        event_type="NOTE_ADDED",
+        title=f"Note Drafted: {payload.title}",
+        description=payload.content[:100] + "..." if len(payload.content) > 100 else payload.content
+    )
+    db.add(evt)
+    db.commit()
+    db.refresh(note)
+    
+    # Return structure mapped
+    return {
+        "id": note.id,
+        "title": note.title,
+        "content": note.content,
+        "created_by": note.created_by,
+        "tags": note.tags,
+        "is_pinned": note.is_pinned,
+        "attachments": payload.attachments or [],
+        "mentions": payload.mentions or [],
+        "created_at": note.created_at,
+        "updated_at": note.updated_at
+    }
+
+@router.put("/{client_id}/notes/{note_id}", response_model=ClientNoteSchema)
+def update_workspace_note(
+    client_id: str,
+    note_id: str,
+    payload: ClientNoteCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    note = db.query(Note).filter(
+        Note.id == note_id,
+        Note.client_id == client_id,
+        Note.organization_id == current_user.organization_id,
+        Note.deleted_at.is_(None)
+    ).first()
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+        
+    note.title = payload.title
+    note.content = payload.content
+    note.tags = payload.tags
+    if payload.is_pinned is not None:
+        note.is_pinned = payload.is_pinned
+    note.attachments_json = json.dumps(payload.attachments) if payload.attachments else None
+    note.mentions_json = json.dumps(payload.mentions) if payload.mentions else None
+    
+    db.commit()
+    db.refresh(note)
+    return {
+        "id": note.id,
+        "title": note.title,
+        "content": note.content,
+        "created_by": note.created_by,
+        "tags": note.tags,
+        "is_pinned": note.is_pinned,
+        "attachments": payload.attachments or [],
+        "mentions": payload.mentions or [],
+        "created_at": note.created_at,
+        "updated_at": note.updated_at
+    }
+
+@router.delete("/{client_id}/notes/{note_id}")
+def delete_workspace_note(
+    client_id: str,
+    note_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    note = db.query(Note).filter(
+        Note.id == note_id,
+        Note.client_id == client_id,
+        Note.organization_id == current_user.organization_id,
+        Note.deleted_at.is_(None)
+    ).first()
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    note.deleted_at = datetime.utcnow()
+    db.commit()
+    return {"message": "Note deleted successfully"}
+
+@router.post("/{client_id}/timeline", response_model=ClientTimelineSchema)
+def create_timeline_event(
+    client_id: str,
+    payload: ClientTimelineCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    client = db.query(Client).filter(
+        Client.id == client_id,
+        Client.organization_id == current_user.organization_id,
+        Client.deleted_at.is_(None)
+    ).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+        
+    evt = ClientTimelineEvent(
+        organization_id=current_user.organization_id,
+        client_id=client_id,
+        event_type=payload.event_type,
+        title=payload.title,
+        description=payload.description
+    )
+    db.add(evt)
+    db.commit()
+    db.refresh(evt)
+    return evt

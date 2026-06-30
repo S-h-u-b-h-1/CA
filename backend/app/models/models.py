@@ -68,6 +68,8 @@ class Client(Base):
     contact_phone = Column(String(20), nullable=True)
     industry = Column(String(100), nullable=True)
     status = Column(String(50), default="ACTIVE")  # ACTIVE / INACTIVE / ARCHIVED
+    assigned_manager = Column(String(255), nullable=True)
+    assigned_partner = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(DateTime, nullable=True)
@@ -160,6 +162,10 @@ class Note(Base):
     title = Column(String(255), nullable=False)
     content = Column(Text, nullable=False)
     created_by = Column(String(36), ForeignKey("users.id"), nullable=False)
+    tags = Column(String(255), nullable=True)
+    is_pinned = Column(Boolean, default=False)
+    attachments_json = Column(JSON, nullable=True)
+    mentions_json = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(DateTime, nullable=True)
@@ -1149,4 +1155,32 @@ class ResearchNote(Base):
     is_pinned = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ClientTask(Base):
+    __tablename__ = "client_tasks"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=False)
+    task_name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(String(50), default="PENDING")  # PENDING, IN_PROGRESS, COMPLETED, DEFERRED
+    linked_to = Column(String(50), nullable=True)  # CLIENT, DOCUMENT, RESEARCH, ITR, TAX_INTELLIGENCE
+    linked_id = Column(String(36), nullable=True)
+    due_date = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ClientTimelineEvent(Base):
+    __tablename__ = "client_timeline_events"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=False)
+    event_type = Column(String(100), nullable=False)  # CLIENT_CREATED, DOCUMENT_UPLOADED, etc.
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
