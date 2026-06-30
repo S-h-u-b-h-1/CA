@@ -1068,3 +1068,85 @@ class TISEntry(Base):
     raw_row_text = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+
+class ResearchSource(Base):
+    __tablename__ = "research_sources"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    title = Column(String(255), nullable=False)
+    authority = Column(String(100), nullable=False)
+    section = Column(String(100), nullable=True)
+    rule_number = Column(String(100), nullable=True)
+    circular_number = Column(String(100), nullable=True)
+    notification_number = Column(String(100), nullable=True)
+    publication_date = Column(DateTime, nullable=True)
+    effective_date = Column(DateTime, nullable=True)
+    url = Column(String(512), nullable=True)
+    category = Column(String(100), nullable=True)
+    keywords = Column(Text, nullable=True)
+    version = Column(String(50), default="1.0")
+    status = Column(String(50), default="ACTIVE")
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ResearchQuery(Base):
+    __tablename__ = "research_queries"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=True)
+    query_text = Column(Text, nullable=False)
+    filters_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ResearchResult(Base):
+    __tablename__ = "research_results"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    query_id = Column(String(36), ForeignKey("research_queries.id"), nullable=False)
+    summary = Column(Text, nullable=False)
+    applicable_law = Column(Text, nullable=True)
+    relevant_sections = Column(Text, nullable=True)
+    relevant_circulars = Column(Text, nullable=True)
+    relevant_notifications = Column(Text, nullable=True)
+    considerations = Column(Text, nullable=True)
+    risks = Column(Text, nullable=True)
+    confidence = Column(Float, default=100.0)
+    references_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ResearchBookmark(Base):
+    __tablename__ = "research_bookmarks"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    source_id = Column(String(36), ForeignKey("research_sources.id"), nullable=False)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ResearchNote(Base):
+    __tablename__ = "research_notes"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=True)
+    assessment_year = Column(String(10), nullable=True)
+    document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=True)
+    title = Column(String(255), nullable=False)
+    content = Column(Text, nullable=False)
+    section_reference = Column(String(100), nullable=True)
+    authority_reference = Column(String(100), nullable=True)
+    tags = Column(String(255), nullable=True)
+    is_pinned = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+

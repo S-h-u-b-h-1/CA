@@ -20,6 +20,7 @@ from app.api.v1.integrations import router as integrations_router
 from app.api.v1.observability import router as observability_router
 from app.api.v1.citations import router as citations_router
 from app.api.v1.graph import router as graph_router
+from app.api.v1.research import router as research_router
 
 
 app = FastAPI(
@@ -90,6 +91,8 @@ def startup_event():
         try:
             run_schema_migration(db)
             seed_compliance_sources(db)
+            from app.core.seed_research import seed_research_sources
+            seed_research_sources(db)
         finally:
             db.close()
     except Exception as e:
@@ -107,6 +110,7 @@ app.include_router(integrations_router, prefix="/api/v1/integrations", tags=["AK
 app.include_router(observability_router, prefix="/api/v1/observability", tags=["Observability"])
 app.include_router(citations_router, prefix="/api/v1/citations", tags=["Citations"])
 app.include_router(graph_router, prefix="/api/v1/graph", tags=["Knowledge Graph"])
+app.include_router(research_router, prefix="/api/v1/research", tags=["Research Workspace"])
 
 
 @app.get("/")
