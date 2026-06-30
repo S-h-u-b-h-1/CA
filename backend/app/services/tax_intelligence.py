@@ -324,6 +324,67 @@ class TaxIntelligenceService:
                         confidence=0.80
                     ))
 
+            # TIS-specific cross-document matching rules
+            from app.models.models import TISEntry
+            tis_entries = db.query(TISEntry).filter(
+                TISEntry.client_id == client_id,
+                TISEntry.assessment_year == ay_normalized
+            ).all()
+
+            doc_tis_ids = {t.document_id for t in tis_entries}
+
+            # TIS Rule A: TIS vs AIS reported values mismatch
+            # Group AIS by category
+            ais_by_cat = {}
+            for e in ais_entries:
+                cat = (e.information_category or "Other").lower()
+                ais_by_cat[cat] = ais_by_cat.get(cat, 0.0) + (e.reported_value or 0.0)
+
+            # Group TIS by category
+            tis_by_cat = {}
+            for t in tis_entries:
+                cat = (t.category or "Other").lower()
+                tis_by_cat[cat] = tis_by_cat.get(cat, 0.0) + (t.reported_value or 0.0)
+
+            for cat, tis_val in tis_by_cat.items():
+                ais_val = ais_by_cat.get(cat, 0.0)
+                if abs(tis_val - ais_val) > 10.0:
+                    insights.append(ClientTaxInsight(
+                        organization_id=client.organization_id,
+                        client_id=client_id,
+                        assessment_year=ay_normalized,
+                        severity="WARNING",
+                        description=f"TIS vs AIS mismatch: Category '{cat}' has reported value of ₹{tis_val:,.2f} in TIS but ₹{ais_val:,.2f} in AIS.",
+                        supporting_documents=list(doc_tis_ids.union(doc_ais_ids)),
+                        confidence=0.95
+                    ))
+
+            # TIS Rule B: TIS Feedback value differs from derived value
+            for t in tis_entries:
+                if abs(t.feedback_value - t.derived_value) > 10.0:
+                    insights.append(ClientTaxInsight(
+                        organization_id=client.organization_id,
+                        client_id=client_id,
+                        assessment_year=ay_normalized,
+                        severity="WARNING",
+                        description=f"TIS feedback mismatch: Category '{t.category}' subcategory '{t.subcategory}' feedback value ₹{t.feedback_value:,.2f} differs from derived value ₹{t.derived_value:,.2f}.",
+                        supporting_documents=[t.document_id],
+                        confidence=1.0
+                    ))
+
+            # TIS Rule C: High-value transaction in TIS (>5L)
+            for t in tis_entries:
+                if t.reported_value > 500000.0:
+                    insights.append(ClientTaxInsight(
+                        organization_id=client.organization_id,
+                        client_id=client_id,
+                        assessment_year=ay_normalized,
+                        severity="WARNING",
+                        description=f"Unexpected high-value TIS transaction: reported ₹{t.reported_value:,.2f} under '{t.category}'. Check return schedule disclosures.",
+                        supporting_documents=[t.document_id],
+                        confidence=0.95
+                    ))
+
             # Add all insights to DB
             for ins in insights:
                 db.add(ins)

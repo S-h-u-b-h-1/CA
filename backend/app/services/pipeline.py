@@ -178,7 +178,7 @@ class DocumentPipelineOrchestrator:
                     )
                     db.add(tax_sum)
 
-                elif doc_type in ["AIS", "TIS"]:
+                elif doc_type == "AIS":
                     # Get client_id
                     doc_record = db.query(Document).filter(Document.id == raw_doc_id).first()
                     client_id = doc_record.client_id if doc_record else None
@@ -203,6 +203,30 @@ class DocumentPipelineOrchestrator:
                             raw_row_text=entry.get("raw_row_text")
                         )
                         db.add(ais_entry)
+
+                elif doc_type == "TIS":
+                    # Get client_id
+                    doc_record = db.query(Document).filter(Document.id == raw_doc_id).first()
+                    client_id = doc_record.client_id if doc_record else None
+
+                    from app.models.models import TISEntry
+                    for entry in structured_facts.get("entries", []):
+                        tis_entry = TISEntry(
+                            organization_id=raw_doc.organization_id,
+                            client_id=client_id,
+                            document_id=raw_doc_id,
+                            pan=structured_facts.get("pan"),
+                            assessment_year=structured_facts.get("assessment_year"),
+                            financial_year=structured_facts.get("financial_year"),
+                            category=entry.get("category"),
+                            subcategory=entry.get("subcategory"),
+                            reported_value=entry.get("reported_value"),
+                            derived_value=entry.get("derived_value"),
+                            feedback_value=entry.get("feedback_value"),
+                            transaction_type=entry.get("transaction_type"),
+                            raw_row_text=entry.get("raw_row_text")
+                        )
+                        db.add(tis_entry)
 
                 elif doc_type == "GST Notice":
                     gst_notice = GSTNoticeEntry(

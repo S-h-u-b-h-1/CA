@@ -56,7 +56,7 @@ class ITRPreparationService:
             categories_uploaded = {d.category for d in docs if d.category}
             
             # Match rules
-            required_docs = ["Form 26AS", "AIS", "Form 16", "Bank Statement"]
+            required_docs = ["Form 26AS", "AIS", "TIS", "Form 16", "Bank Statement"]
             collected_docs = []
             missing_docs = []
             
@@ -79,6 +79,8 @@ class ITRPreparationService:
             
             # Check 1: PAN Consistency
             pan_mismatch = any("PAN discrepancy" in ins.description for ins in insights)
+            tis_ais_mismatch = any("TIS vs AIS mismatch" in ins.description for ins in insights)
+            tis_feedback_mismatch = any("TIS feedback mismatch" in ins.description for ins in insights)
             if pan_mismatch:
                 verifications.append(ITRVerificationResult(
                     organization_id=client.organization_id,
@@ -223,6 +225,45 @@ class ITRPreparationService:
                     status="PASS"
                 ))
 
+            # Check 8: TIS vs AIS and TIS Feedback
+            if tis_ais_mismatch:
+                verifications.append(ITRVerificationResult(
+                    organization_id=client.organization_id,
+                    client_id=client_id,
+                    assessment_year=ay_normalized,
+                    verification_type="TIS_AIS_CONSISTENCY",
+                    description="Discrepancies found between TIS reported values and AIS processed values.",
+                    status="WARNING"
+                ))
+            else:
+                verifications.append(ITRVerificationResult(
+                    organization_id=client.organization_id,
+                    client_id=client_id,
+                    assessment_year=ay_normalized,
+                    verification_type="TIS_AIS_CONSISTENCY",
+                    description="TIS reported values are consistent with AIS details.",
+                    status="PASS"
+                ))
+
+            if tis_feedback_mismatch:
+                verifications.append(ITRVerificationResult(
+                    organization_id=client.organization_id,
+                    client_id=client_id,
+                    assessment_year=ay_normalized,
+                    verification_type="TIS_FEEDBACK_CHECK",
+                    description="Feedback values mismatch derived values in TIS entries.",
+                    status="WARNING"
+                ))
+            else:
+                verifications.append(ITRVerificationResult(
+                    organization_id=client.organization_id,
+                    client_id=client_id,
+                    assessment_year=ay_normalized,
+                    verification_type="TIS_FEEDBACK_CHECK",
+                    description="All TIS feedback values match derived values.",
+                    status="PASS"
+                ))
+
             # 3. ITR Readiness Score
             readiness_score = 100.0
             reasons = []
@@ -239,6 +280,20 @@ class ITRPreparationService:
                 reasons.append({"text": "AIS is missing", "status": "FAIL"})
             else:
                 reasons.append({"text": "AIS is available", "status": "READY"})
+
+            if "TIS" in missing_docs:
+                readiness_score -= 20.0
+                reasons.append({"text": "TIS is missing", "status": "FAIL"})
+            else:
+                reasons.append({"text": "TIS is available", "status": "READY"})
+
+            if tis_ais_mismatch:
+                readiness_score -= 10.0
+                reasons.append({"text": "TIS vs AIS value mismatch detected", "status": "FAIL"})
+
+            if tis_feedback_mismatch:
+                readiness_score -= 10.0
+                reasons.append({"text": "TIS feedback value mismatch detected", "status": "FAIL"})
 
             if "Form 16" in missing_docs:
                 readiness_score -= 20.0
@@ -272,7 +327,6 @@ class ITRPreparationService:
 
             readiness_score = max(0.0, min(100.0, readiness_score))
 
-            # 4. Action Items Generator
             action_items = []
             for req in missing_docs:
                 action_items.append(ITRActionItem(
@@ -280,8 +334,30 @@ class ITRPreparationService:
                     client_id=client_id,
                     assessment_year=ay_normalized,
                     action_text=f"Collect {req} document to complete return preparation.",
-                    severity="CRITICAL" if req in ["Form 26AS", "AIS"] else "WARNING",
+                    severity="CRITICAL" if req in ["Form 26AS", "AIS", "TIS"] else "WARNING",
                     reference_document=req,
+                    status="PENDING"
+                ))
+
+            if tis_ais_mismatch:
+                action_items.append(ITRActionItem(
+                    organization_id=client.organization_id,
+                    client_id=client_id,
+                    assessment_year=ay_normalized,
+                    action_text="Verify value discrepancies flagged between TIS and AIS records.",
+                    severity="WARNING",
+                    reference_document="TIS",
+                    status="PENDING"
+                ))
+
+            if tis_feedback_mismatch:
+                action_items.append(ITRActionItem(
+                    organization_id=client.organization_id,
+                    client_id=client_id,
+                    assessment_year=ay_normalized,
+                    action_text="Verify why feedback values differ from derived values in TIS schedules.",
+                    severity="WARNING",
+                    reference_document="TIS",
                     status="PENDING"
                 ))
 

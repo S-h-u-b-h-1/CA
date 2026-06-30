@@ -1048,3 +1048,23 @@ class ITRVerificationResult(Base):
     status = Column(String(50), default="PASS")
     created_at = Column(DateTime, default=datetime.utcnow)
 
+
+class TISEntry(Base):
+    __tablename__ = "tis_entries"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=False)
+    document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False, index=True)
+    pan = Column(String(10), nullable=True)
+    assessment_year = Column(String(10), nullable=False)
+    financial_year = Column(String(10), nullable=True)
+    category = Column(String(100), nullable=True)
+    subcategory = Column(String(100), nullable=True)
+    reported_value = Column(Float, default=0.0)
+    derived_value = Column(Float, default=0.0)
+    feedback_value = Column(Float, default=0.0)
+    transaction_type = Column(String(50), default="INCOME")
+    raw_row_text = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+

@@ -264,9 +264,104 @@ class TISParser(BaseParser):
         return "TIS"
 
     def parse(self, text: str) -> Dict[str, Any]:
-        # TIS is Taxpayer Information Summary (AIS simplified)
-        facts = AISParser().parse(text)
-        facts["document_type"] = "TIS"
+        facts = {
+            "pan": None,
+            "assessment_year": None,
+            "financial_year": None,
+            "taxpayer_name": None,
+            "total_reported_value": 0.0,
+            "total_derived_value": 0.0,
+            "total_feedback_value": 0.0,
+            "entries": []
+        }
+
+        # PAN
+        pan_match = re.search(r"PAN\s*[:\-]?\s*([A-Z]{5}[0-9]{4}[A-Z]{1})", text, re.IGNORECASE)
+        if pan_match:
+            facts["pan"] = pan_match.group(1).upper()
+        else:
+            pan_fb = re.search(r"\b([A-Z]{5}[0-9]{4}[A-Z]{1})\b", text)
+            if pan_fb:
+                facts["pan"] = pan_fb.group(1).upper()
+
+        # AY / FY
+        ay_match = re.search(r"(?:Assessment\s+Year|AY)\s*[:\-]?\s*([0-9]{4}-[0-9]{2,4})", text, re.IGNORECASE)
+        if ay_match:
+            facts["assessment_year"] = ay_match.group(1)
+        fy_match = re.search(r"(?:Financial\s+Year|FY)\s*[:\-]?\s*([0-9]{4}-[0-9]{2,4})", text, re.IGNORECASE)
+        if fy_match:
+            facts["financial_year"] = fy_match.group(1)
+
+        # Name
+        name_match = re.search(r"(?:Taxpayer\s+Name|Name)\s*[:\-]?\s*([^\n]+)", text, re.IGNORECASE)
+        if name_match:
+            facts["taxpayer_name"] = name_match.group(1).strip()
+
+        # Parse entries
+        lines = text.split("\n")
+        categories_keywords = [
+            ("Salary", "Salary"),
+            ("Interest from deposit", "Interest Income"),
+            ("Dividend", "Dividend Income"),
+            ("Rent", "Rent/Property Income"),
+            ("Securities", "Capital Gains"),
+            ("Business", "Business Income"),
+            ("Other", "Other Income"),
+            ("Property", "Rent/Property Income"),
+            ("Capital Gains", "Capital Gains")
+        ]
+
+        total_rep = 0.0
+        total_der = 0.0
+        total_feed = 0.0
+
+        for line in lines:
+            line_clean = line.strip()
+            if not line_clean:
+                continue
+
+            matched_cat = None
+            transaction_type = "INCOME"
+
+            for kw, norm_cat in categories_keywords:
+                if kw.lower() in line_clean.lower():
+                    matched_cat = norm_cat
+                    break
+
+            if matched_cat:
+                # Find all clean numbers
+                nums = re.findall(r"\b\d[\d,]*\b", line_clean)
+                vals = []
+                for n in nums:
+                    if "-" in n or len(n) == 4 and n.startswith("20"):
+                        continue
+                    try:
+                        val = float(n.replace(",", ""))
+                        vals.append(val)
+                    except:
+                        pass
+
+                rep = vals[0] if len(vals) > 0 else 0.0
+                der = vals[1] if len(vals) > 1 else rep
+                feed = vals[2] if len(vals) > 2 else der
+
+                total_rep += rep
+                total_der += der
+                total_feed += feed
+
+                facts["entries"].append({
+                    "category": matched_cat,
+                    "subcategory": line_clean[:50],
+                    "reported_value": rep,
+                    "derived_value": der,
+                    "feedback_value": feed,
+                    "transaction_type": transaction_type,
+                    "raw_row_text": line_clean
+                })
+
+        facts["total_reported_value"] = total_rep
+        facts["total_derived_value"] = total_der
+        facts["total_feedback_value"] = total_feed
         return facts
 
 
