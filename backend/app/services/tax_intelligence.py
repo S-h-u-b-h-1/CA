@@ -352,6 +352,13 @@ class TaxIntelligenceService:
 
             db.commit()
             print(f"Tax Intelligence successfully recomputed for client {client_id} (AY {ay_normalized}).")
+
+            try:
+                from app.services.itr_preparation import ITRPreparationService
+                ITRPreparationService.recompute(db, client_id, ay_normalized)
+            except Exception as e:
+                print(f"Warning: ITR Preparation cascade trigger failed: {e}")
+
             return True
 
         except Exception as err:

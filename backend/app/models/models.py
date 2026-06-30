@@ -989,3 +989,62 @@ class DocumentMatch(Base):
     status = Column(String(50), default="MATCHED")
     created_at = Column(DateTime, default=datetime.utcnow)
 
+
+class ITRProfile(Base):
+    __tablename__ = "itr_profiles"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=False)
+    assessment_year = Column(String(10), nullable=False)
+    financial_year = Column(String(10), nullable=True)
+    itr_status = Column(String(50), default="NOT_STARTED")
+    documents_uploaded = Column(JSON, nullable=True)
+    data_completeness_score = Column(Float, default=0.0)
+    processing_status = Column(String(50), default="PENDING")
+    confidence = Column(Float, default=1.0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ITRReadiness(Base):
+    __tablename__ = "itr_readiness"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=False)
+    assessment_year = Column(String(10), nullable=False)
+    readiness_score = Column(Float, default=0.0)
+    reasons = Column(JSON, nullable=True)
+    collected_documents = Column(JSON, nullable=True)
+    missing_documents = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ITRActionItem(Base):
+    __tablename__ = "itr_action_items"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=False)
+    assessment_year = Column(String(10), nullable=False)
+    action_text = Column(Text, nullable=False)
+    severity = Column(String(50), default="INFO")
+    reference_document = Column(String(255), nullable=True)
+    status = Column(String(50), default="PENDING")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ITRVerificationResult(Base):
+    __tablename__ = "itr_verification_results"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=False)
+    assessment_year = Column(String(10), nullable=False)
+    verification_type = Column(String(100), nullable=False)
+    description = Column(Text, nullable=False)
+    status = Column(String(50), default="PASS")
+    created_at = Column(DateTime, default=datetime.utcnow)
+

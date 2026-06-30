@@ -372,3 +372,168 @@ def get_client_tax_insights(
             "confidence": ins.confidence
         } for ins in insights
     ]
+
+
+@router.get("/{client_id}/itr-profile")
+def get_client_itr_profile(
+    client_id: str,
+    assessment_year: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    client = db.query(Client).filter(
+        Client.id == client_id,
+        Client.organization_id == current_user.organization_id,
+        Client.deleted_at.is_(None)
+    ).first()
+    if not client:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+        
+    ay_val = assessment_year or "2025-26"
+    if len(ay_val) == 9:
+        ay_val = f"{ay_val[:4]}-{ay_val[7:]}"
+        
+    from app.services.tax_intelligence import TaxIntelligenceService
+    TaxIntelligenceService.recompute(db, client_id, ay_val)
+
+    from app.models.models import ITRProfile
+    profile = db.query(ITRProfile).filter(
+        ITRProfile.client_id == client_id,
+        ITRProfile.assessment_year == ay_val
+    ).first()
+
+    if not profile:
+        return {
+            "pan": client.PAN or "N/A",
+            "client_name": client.client_name,
+            "assessment_year": ay_val,
+            "itr_status": "NOT_STARTED",
+            "documents_uploaded": [],
+            "data_completeness_score": 0.0,
+            "processing_status": "PENDING"
+        }
+
+    return {
+        "id": profile.id,
+        "pan": client.PAN or "N/A",
+        "client_name": client.client_name,
+        "assessment_year": profile.assessment_year,
+        "financial_year": profile.financial_year,
+        "itr_status": profile.itr_status,
+        "documents_uploaded": profile.documents_uploaded or [],
+        "data_completeness_score": profile.data_completeness_score,
+        "processing_status": profile.processing_status,
+        "confidence": profile.confidence
+    }
+
+
+@router.get("/{client_id}/itr-readiness")
+def get_client_itr_readiness(
+    client_id: str,
+    assessment_year: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    client = db.query(Client).filter(
+        Client.id == client_id,
+        Client.organization_id == current_user.organization_id,
+        Client.deleted_at.is_(None)
+    ).first()
+    if not client:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+        
+    ay_val = assessment_year or "2025-26"
+    if len(ay_val) == 9:
+        ay_val = f"{ay_val[:4]}-{ay_val[7:]}"
+
+    from app.models.models import ITRReadiness
+    readiness = db.query(ITRReadiness).filter(
+        ITRReadiness.client_id == client_id,
+        ITRReadiness.assessment_year == ay_val
+    ).first()
+
+    if not readiness:
+        return {
+            "readiness_score": 0.0,
+            "reasons": [],
+            "collected_documents": [],
+            "missing_documents": ["Form 26AS", "AIS", "Form 16", "Bank Statement"]
+        }
+
+    return {
+        "readiness_score": readiness.readiness_score,
+        "reasons": readiness.reasons or [],
+        "collected_documents": readiness.collected_documents or [],
+        "missing_documents": readiness.missing_documents or []
+    }
+
+
+@router.get("/{client_id}/itr-actions")
+def get_client_itr_actions(
+    client_id: str,
+    assessment_year: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    client = db.query(Client).filter(
+        Client.id == client_id,
+        Client.organization_id == current_user.organization_id,
+        Client.deleted_at.is_(None)
+    ).first()
+    if not client:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+        
+    ay_val = assessment_year or "2025-26"
+    if len(ay_val) == 9:
+        ay_val = f"{ay_val[:4]}-{ay_val[7:]}"
+
+    from app.models.models import ITRActionItem
+    actions = db.query(ITRActionItem).filter(
+        ITRActionItem.client_id == client_id,
+        ITRActionItem.assessment_year == ay_val
+    ).all()
+
+    return [
+        {
+            "id": a.id,
+            "action_text": a.action_text,
+            "severity": a.severity,
+            "reference_document": a.reference_document,
+            "status": a.status
+        } for a in actions
+    ]
+
+
+@router.get("/{client_id}/itr-verification")
+def get_client_itr_verification(
+    client_id: str,
+    assessment_year: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    client = db.query(Client).filter(
+        Client.id == client_id,
+        Client.organization_id == current_user.organization_id,
+        Client.deleted_at.is_(None)
+    ).first()
+    if not client:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+        
+    ay_val = assessment_year or "2025-26"
+    if len(ay_val) == 9:
+        ay_val = f"{ay_val[:4]}-{ay_val[7:]}"
+
+    from app.models.models import ITRVerificationResult
+    results = db.query(ITRVerificationResult).filter(
+        ITRVerificationResult.client_id == client_id,
+        ITRVerificationResult.assessment_year == ay_val
+    ).all()
+
+    return [
+        {
+            "id": r.id,
+            "verification_type": r.verification_type,
+            "description": r.description,
+            "status": r.status
+        } for r in results
+    ]
