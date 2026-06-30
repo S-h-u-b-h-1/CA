@@ -668,3 +668,115 @@ def get_form26as_data(
         },
         "entries": entries
     }
+
+
+@router.get("/{document_id}/ais")
+def get_ais_data(
+    document_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    doc = db.query(Document).filter(
+        Document.id == document_id,
+        Document.organization_id == current_user.organization_id,
+        Document.deleted_at.is_(None)
+    ).first()
+    
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+        
+    from app.models.models import ProcessingPipeline, ProcessingError, ProcessedDocument, AISEntry
+    
+    pipeline = db.query(ProcessingPipeline).filter(
+        ProcessingPipeline.raw_document_id == document_id
+    ).first()
+    
+    pipeline_status = pipeline.status if pipeline else "PENDING"
+    
+    if pipeline_status == "FAILED":
+        err_msg = "AIS extraction failed"
+        if pipeline:
+            err_row = db.query(ProcessingError).filter(
+                ProcessingError.pipeline_id == pipeline.id
+            ).order_by(ProcessingError.created_at.desc()).first()
+            if err_row:
+                err_msg = err_row.error_message
+        return {
+            "document_id": document_id,
+            "status": "failed",
+            "error": err_msg
+        }
+        
+    proc_doc = db.query(ProcessedDocument).filter(
+        ProcessedDocument.raw_document_id == document_id
+    ).first()
+    
+    if pipeline_status != "SUCCESS" or not proc_doc:
+        return {
+            "document_id": document_id,
+            "status": "processing" if pipeline_status == "PROCESSING" else "pending",
+            "classification": "AIS",
+            "extracted_text_preview": "",
+            "summary": {
+                "pan": None,
+                "assessment_year": None,
+                "total_reported_value": 0.0,
+                "information_category_count": 0,
+                "source_count": 0
+            },
+            "entries": []
+        }
+        
+    entries_rows = db.query(AISEntry).filter(
+        AISEntry.document_id == document_id
+    ).all()
+    
+    sources = set()
+    total_reported_value = 0.0
+    entries = []
+    
+    pan = None
+    assessment_year = None
+    
+    for e in entries_rows:
+        if e.pan:
+            pan = e.pan
+        if e.assessment_year:
+            assessment_year = e.assessment_year
+        if e.source_name:
+            sources.add(e.source_name)
+            
+        rep_val = e.reported_value or 0.0
+        total_reported_value += rep_val
+        
+        entries.append({
+            "information_category": e.information_category,
+            "information_source": e.information_source,
+            "source_name": e.source_name,
+            "reported_value": rep_val,
+            "processed_value": e.processed_value or 0.0,
+            "accepted_value": e.accepted_value or 0.0,
+            "derived_value": e.derived_value or 0.0,
+            "transaction_type": e.transaction_type or "SFT",
+            "raw_row_text": e.raw_row_text or ""
+        })
+        
+    extracted_text_preview = proc_doc.ocr_text[:1000] if proc_doc.ocr_text else ""
+    
+    return {
+        "document_id": document_id,
+        "status": "processed",
+        "classification": "AIS",
+        "extracted_text_preview": extracted_text_preview,
+        "summary": {
+            "pan": pan or "N/A",
+            "assessment_year": assessment_year or "N/A",
+            "total_reported_value": total_reported_value,
+            "information_category_count": len(entries),
+            "source_count": len(sources)
+        },
+        "entries": entries
+    }

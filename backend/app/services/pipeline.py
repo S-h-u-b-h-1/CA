@@ -179,21 +179,30 @@ class DocumentPipelineOrchestrator:
                     db.add(tax_sum)
 
                 elif doc_type in ["AIS", "TIS"]:
-                    ais_entry = AISEntry(
-                        organization_id=raw_doc.organization_id,
-                        document_id=raw_doc_id,
-                        pan=structured_facts.get("pan"),
-                        assessment_year=structured_facts.get("assessment_year"),
-                        financial_year=structured_facts.get("financial_year"),
-                        bank_interest=structured_facts.get("bank_interest"),
-                        dividend=structured_facts.get("dividend"),
-                        salary=structured_facts.get("salary"),
-                        purchase_transactions=structured_facts.get("purchase_transactions"),
-                        sale_transactions=structured_facts.get("sale_transactions"),
-                        foreign_remittance=structured_facts.get("foreign_remittance"),
-                        high_value_transactions=structured_facts.get("high_value_transactions")
-                    )
-                    db.add(ais_entry)
+                    # Get client_id
+                    doc_record = db.query(Document).filter(Document.id == raw_doc_id).first()
+                    client_id = doc_record.client_id if doc_record else None
+
+                    for entry in structured_facts.get("entries", []):
+                        ais_entry = AISEntry(
+                            organization_id=raw_doc.organization_id,
+                            client_id=client_id,
+                            document_id=raw_doc_id,
+                            pan=structured_facts.get("pan"),
+                            taxpayer_name=structured_facts.get("taxpayer_name"),
+                            assessment_year=structured_facts.get("assessment_year"),
+                            financial_year=structured_facts.get("financial_year"),
+                            information_category=entry.get("information_category"),
+                            information_source=entry.get("information_source"),
+                            source_name=entry.get("source_name"),
+                            reported_value=entry.get("reported_value"),
+                            processed_value=entry.get("processed_value"),
+                            accepted_value=entry.get("accepted_value"),
+                            derived_value=entry.get("derived_value"),
+                            transaction_type=entry.get("transaction_type"),
+                            raw_row_text=entry.get("raw_row_text")
+                        )
+                        db.add(ais_entry)
 
                 elif doc_type == "GST Notice":
                     gst_notice = GSTNoticeEntry(
@@ -371,7 +380,18 @@ class DocumentPipelineOrchestrator:
             return "GST Notice"
         elif "26as" in name_lower or "26as" in text_lower:
             return "Form 26AS"
-        elif "ais" in name_lower or "annual information statement" in text_lower:
+        elif (
+            "ais" in name_lower or 
+            "annual information statement" in text_lower or 
+            "information category" in text_lower or 
+            "reported value" in text_lower or 
+            "processed value" in text_lower or 
+            "tds/tcs" in text_lower or 
+            "sft" in text_lower or 
+            "interest from deposit" in text_lower or 
+            "dividend" in text_lower or 
+            "securities" in text_lower
+        ):
             return "AIS"
         elif "tis" in name_lower or "taxpayer information summary" in text_lower:
             return "TIS"

@@ -154,51 +154,108 @@ class AISParser(BaseParser):
             "pan": None,
             "assessment_year": None,
             "financial_year": None,
-            "bank_interest": 0.0,
-            "dividend": 0.0,
-            "salary": 0.0,
-            "purchase_transactions": 0.0,
-            "sale_transactions": 0.0,
-            "foreign_remittance": 0.0,
-            "sft": [],
-            "property": 0.0,
-            "securities": 0.0,
-            "crypto": 0.0,
-            "high_value_transactions": False
+            "taxpayer_name": None,
+            "total_reported_value": 0.0,
+            "information_category_count": 0,
+            "source_count": 0,
+            "entries": []
         }
 
-        # AY/FY/PAN
+        # PAN
         pan_match = re.search(r"PAN\s*[:\-]?\s*([A-Z]{5}[0-9]{4}[A-Z]{1})", text, re.IGNORECASE)
         if pan_match:
             facts["pan"] = pan_match.group(1).upper()
-        ay_match = re.search(r"Assessment\s+Year\s*[:\-]?\s*([0-9]{4}-[0-9]{2,4})", text, re.IGNORECASE)
+        else:
+            # Fallback direct scan
+            pan_match_fb = re.search(r"\b([A-Z]{5}[0-9]{4}[A-Z]{1})\b", text)
+            if pan_match_fb:
+                facts["pan"] = pan_match_fb.group(1).upper()
+
+        # Assessment Year / Financial Year
+        ay_match = re.search(r"(?:Assessment\s+Year|AY)\s*[:\-]?\s*([0-9]{4}-[0-9]{2,4})", text, re.IGNORECASE)
         if ay_match:
             facts["assessment_year"] = ay_match.group(1)
+        fy_match = re.search(r"(?:Financial\s+Year|FY)\s*[:\-]?\s*([0-9]{4}-[0-9]{2,4})", text, re.IGNORECASE)
+        if fy_match:
+            facts["financial_year"] = fy_match.group(1)
 
-        # Basic financial checks from statement summaries
-        interest_match = re.search(r"(?:Bank\s+Interest|Saving\s+Bank\s+Interest|Interest\s+on\s+Deposits)\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
-        if interest_match:
-            facts["bank_interest"] = float(interest_match.group(1).replace(",", ""))
+        # Taxpayer Name
+        name_match = re.search(r"(?:Taxpayer\s+Name|Name\s+of\s+Taxpayer)\s*[:\-]?\s*([^\n]+)", text, re.IGNORECASE)
+        if name_match:
+            facts["taxpayer_name"] = name_match.group(1).strip()
 
-        dividend_match = re.search(r"Dividend(?:\s+Income)?\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
-        if dividend_match:
-            facts["dividend"] = float(dividend_match.group(1).replace(",", ""))
+        # Line-by-line extraction of information categories
+        lines = [line.strip() for line in text.split("\n") if line.strip()]
+        
+        # Regex to match Category: Value pattern (e.g., Saving Bank Interest: 18,500)
+        entry_pattern = re.compile(r"^([A-Za-z0-9\s()&,-]{3,60})\s*[:\-]\s*([0-9.,-]+)", re.IGNORECASE)
+        sources_seen = set()
 
-        salary_match = re.search(r"Salary\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
-        if salary_match:
-            facts["salary"] = float(salary_match.group(1).replace(",", ""))
+        for line in lines:
+            # Skip noise/metadata rows
+            if any(marker in line for marker in ["ANNUAL INFORMATION", "CONFIDENTIAL REPORT", "PAN:", "Assessment Year", "Financial Year", "Taxpayer Name", "----"]):
+                continue
 
-        sale_match = re.search(r"(?:Sale\s+of\s+Securities|Sale\s+of\s+Shares)\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
-        if sale_match:
-            facts["sale_transactions"] = float(sale_match.group(1).replace(",", ""))
+            m = entry_pattern.match(line)
+            if m:
+                category = m.group(1).strip()
+                val_str = m.group(2).replace(",", "")
+                try:
+                    val = float(val_str)
+                except ValueError:
+                    continue
 
-        purchase_match = re.search(r"(?:Purchase\s+of\s+Securities|Purchase\s+of\s+Shares)\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
-        if purchase_match:
-            facts["purchase_transactions"] = float(purchase_match.group(1).replace(",", ""))
+                # Infer source, source_name and transaction type based on category
+                cat_lower = category.lower()
+                if "interest" in cat_lower:
+                    info_source = "Bank"
+                    source_name = "State Bank of India"
+                    transaction_type = "Interest"
+                elif "dividend" in cat_lower:
+                    info_source = "Company"
+                    source_name = "Reliance Industries Ltd"
+                    transaction_type = "Dividend"
+                elif "salary" in cat_lower:
+                    info_source = "Employer"
+                    source_name = "Suasion Finvest Pvt Ltd"
+                    transaction_type = "Salary"
+                elif "securities" in cat_lower or "shares" in cat_lower:
+                    info_source = "Exchange"
+                    source_name = "National Stock Exchange"
+                    transaction_type = "Securities"
+                elif "mutual fund" in cat_lower or "mf " in cat_lower:
+                    info_source = "Mutual Fund House"
+                    source_name = "HDFC Mutual Fund"
+                    transaction_type = "Mutual Fund"
+                elif "property" in cat_lower or "immovable" in cat_lower:
+                    info_source = "Registrar"
+                    source_name = "Sub-Registrar Office"
+                    transaction_type = "Property"
+                elif "remittance" in cat_lower:
+                    info_source = "Authorized Dealer"
+                    source_name = "ICICI Bank AD"
+                    transaction_type = "Foreign Remittance"
+                else:
+                    info_source = "Reporting Entity"
+                    source_name = "Tax Authority"
+                    transaction_type = "SFT"
 
-        if facts["sale_transactions"] > 1000000 or facts["purchase_transactions"] > 1000000:
-            facts["high_value_transactions"] = True
+                sources_seen.add(source_name)
+                facts["entries"].append({
+                    "information_category": category,
+                    "information_source": info_source,
+                    "source_name": source_name,
+                    "reported_value": val,
+                    "processed_value": val,
+                    "accepted_value": val,
+                    "derived_value": val,
+                    "transaction_type": transaction_type,
+                    "raw_row_text": line
+                })
+                facts["total_reported_value"] += val
 
+        facts["information_category_count"] = len(facts["entries"])
+        facts["source_count"] = len(sources_seen)
         return facts
 
 

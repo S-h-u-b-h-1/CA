@@ -44,16 +44,37 @@ app.add_middleware(
 
 def run_schema_migration(db):
     from sqlalchemy import text
-    columns = [
+    columns_26as = [
         ("client_id", "VARCHAR(36)"),
         ("raw_row_text", "TEXT"),
         ("section_code", "VARCHAR(50)")
     ]
-    for col_name, col_type in columns:
+    for col_name, col_type in columns_26as:
         try:
             db.execute(text(f"ALTER TABLE form26as_entries ADD COLUMN {col_name} {col_type}"))
             db.commit()
             print(f"Schema Migration: Column '{col_name}' successfully added to 'form26as_entries'.")
+        except Exception:
+            db.rollback()
+
+    columns_ais = [
+        ("client_id", "VARCHAR(36)"),
+        ("taxpayer_name", "VARCHAR(255)"),
+        ("information_category", "VARCHAR(100)"),
+        ("information_source", "VARCHAR(100)"),
+        ("source_name", "VARCHAR(255)"),
+        ("reported_value", "FLOAT"),
+        ("processed_value", "FLOAT"),
+        ("accepted_value", "FLOAT"),
+        ("derived_value", "FLOAT"),
+        ("transaction_type", "VARCHAR(50)"),
+        ("raw_row_text", "TEXT")
+    ]
+    for col_name, col_type in columns_ais:
+        try:
+            db.execute(text(f"ALTER TABLE ais_entries ADD COLUMN {col_name} {col_type}"))
+            db.commit()
+            print(f"Schema Migration: Column '{col_name}' successfully added to 'ais_entries'.")
         except Exception:
             db.rollback()
 
