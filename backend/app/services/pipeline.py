@@ -436,7 +436,9 @@ class DocumentPipelineOrchestrator:
         name_lower = filename.lower()
         text_lower = text.lower() if text else ""
         
-        if "26as" in name_lower or "26as" in text_lower:
+        if "gst notice" in name_lower or "drc-07" in text_lower or ("gst" in text_lower and "notice" in text_lower):
+            return "GST Notice"
+        elif "26as" in name_lower or "26as" in text_lower:
             return "Form 26AS"
         elif "ais" in name_lower or "annual information statement" in text_lower:
             return "AIS"
@@ -448,8 +450,6 @@ class DocumentPipelineOrchestrator:
             return "ITR Acknowledgement"
         elif "itr" in name_lower and (name_lower.endswith(".json") or name_lower.endswith(".xml")):
             return "ITR JSON/XML"
-        elif "gst notice" in name_lower or ("gst" in text_lower and "notice" in text_lower):
-            return "GST Notice"
         elif "income tax notice" in name_lower or ("income tax" in text_lower and "notice" in text_lower):
             return "Income Tax Notice"
         elif "gstr-1" in name_lower or "gstr1" in name_lower:
