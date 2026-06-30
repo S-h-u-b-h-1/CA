@@ -717,6 +717,7 @@ class Form26ASEntry(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=True)
     document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=False, index=True)
     pan = Column(String(10), nullable=True)
     assessment_year = Column(String(10), nullable=True)
@@ -725,6 +726,7 @@ class Form26ASEntry(Base):
     deductor_name = Column(String(255), nullable=True)
     deductor_tan = Column(String(10), nullable=True)
     section = Column(String(50), nullable=True)
+    section_code = Column(String(50), nullable=True)
     amount_paid = Column(Float, nullable=True)
     amount_credited = Column(Float, nullable=True)
     tax_deducted = Column(Float, nullable=True)
@@ -732,6 +734,7 @@ class Form26ASEntry(Base):
     refund = Column(Float, nullable=True)
     interest = Column(Float, nullable=True)
     demand = Column(Float, nullable=True)
+    raw_row_text = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

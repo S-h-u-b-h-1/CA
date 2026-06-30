@@ -18,3 +18,4 @@ coverage/
 .pytest_cache/
 uploads/
 .vercel
+.env*

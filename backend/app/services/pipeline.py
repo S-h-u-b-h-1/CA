@@ -140,6 +140,7 @@ class DocumentPipelineOrchestrator:
                     for entry in structured_facts.get("tds_entries", []):
                         tds_entry = Form26ASEntry(
                             organization_id=raw_doc.organization_id,
+                            client_id=raw_doc.client_id,
                             document_id=raw_doc_id,
                             pan=structured_facts.get("pan"),
                             assessment_year=structured_facts.get("assessment_year"),
@@ -148,10 +149,12 @@ class DocumentPipelineOrchestrator:
                             deductor_name=entry.get("deductor_name"),
                             deductor_tan=entry.get("deductor_tan"),
                             section=entry.get("section"),
+                            section_code=entry.get("section_code"),
                             amount_paid=entry.get("amount_paid"),
                             amount_credited=entry.get("amount_credited"),
                             tax_deducted=entry.get("tax_deducted"),
-                            tax_deposited=entry.get("tax_deposited")
+                            tax_deposited=entry.get("tax_deposited"),
+                            raw_row_text=entry.get("raw_row_text")
                         )
                         db.add(tds_entry)
                     # Store Challan entries
@@ -287,81 +290,9 @@ class DocumentPipelineOrchestrator:
                     db, raw_doc.organization_id, raw_doc_id, doc_type, structured_facts
                 )
 
-            # 3. Entity Extraction
-            pipeline.current_step = "ENTITIES"
+            # 3, 4, 5. Entity, Embeddings, Graph steps bypassed for Emergency Reset Sprint
+            pipeline.current_step = "COMPLETE"
             db.commit()
-
-            if ocr_text:
-                extracted_entities = DocumentPipelineOrchestrator.extract_entities(ocr_text)
-                for etype, evalue in extracted_entities:
-                    # Deduplicate and resolve entity using GraphService
-                    ent = GraphService.resolve_entity(db, raw_doc.organization_id, etype, evalue)
-
-                    # Add Citation log
-                    CitationEngine.create_citation(
-                        db=db,
-                        organization_id=raw_doc.organization_id,
-                        source_type="CLIENT_DOCUMENT",
-                        source_document_id=raw_doc_id,
-                        client_id=raw_doc.client_id,
-                        target_entity_id=ent.id,
-                        text_reference=f"Extracted {etype} match: {evalue}",
-                        quote_text=evalue,
-                        confidence_score=1.0
-                    )
-
-            # 4. Embeddings Generation & Citation chunks
-            pipeline.current_step = "EMBEDDINGS"
-            db.commit()
-
-            if ocr_text:
-                # Text splitter (paragraphs)
-                paragraphs = [p.strip() for p in ocr_text.split("\n\n") if p.strip()]
-                if not paragraphs:
-                    paragraphs = [ocr_text]
-
-                embedder = get_embedding_provider()
-                for idx, para in enumerate(paragraphs):
-                    chunk = db.query(KnowledgeChunk).filter(
-                        KnowledgeChunk.processed_document_id == proc_doc.id,
-                        KnowledgeChunk.chunk_index == idx
-                    ).first()
-
-                    if not chunk:
-                        chunk = KnowledgeChunk(
-                            organization_id=raw_doc.organization_id,
-                            processed_document_id=proc_doc.id,
-                            chunk_index=idx,
-                            text_content=para
-                        )
-                        db.add(chunk)
-                        db.flush()
-
-                        vector = embedder.get_embedding(para)
-                        emb = Embedding(
-                            organization_id=raw_doc.organization_id,
-                            knowledge_chunk_id=chunk.id,
-                            embedding_vector=vector
-                        )
-                        db.add(emb)
-
-                        # Extract legal references and create citations for this chunk
-                        CitationEngine.extract_and_create_citations(
-                            db=db,
-                            organization_id=raw_doc.organization_id,
-                            text=para,
-                            source_type="CLIENT_DOCUMENT",
-                            source_document_id=raw_doc_id,
-                            client_id=raw_doc.client_id,
-                            paragraph_number=idx
-                        )
-
-            # 5. Knowledge Graph Node & Edges
-            pipeline.current_step = "GRAPH"
-            db.commit()
-
-            # Build full knowledge graph connections for the document
-            GraphService.build_graph_for_document(db, raw_doc.organization_id, raw_doc_id)
 
             # Complete Pipeline
             pipeline.current_step = "COMPLETE"

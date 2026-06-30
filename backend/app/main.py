@@ -42,13 +42,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def run_schema_migration(db):
+    from sqlalchemy import text
+    columns = [
+        ("client_id", "VARCHAR(36)"),
+        ("raw_row_text", "TEXT"),
+        ("section_code", "VARCHAR(50)")
+    ]
+    for col_name, col_type in columns:
+        try:
+            db.execute(text(f"ALTER TABLE form26as_entries ADD COLUMN {col_name} {col_type}"))
+            db.commit()
+            print(f"Schema Migration: Column '{col_name}' successfully added to 'form26as_entries'.")
+        except Exception:
+            db.rollback()
+
 # Startup Seeding Events
 @app.on_event("startup")
 def startup_event():
     try:
         db = SessionLocal()
         try:
-            # Run compliance registry seeding on application launch
+            run_schema_migration(db)
             seed_compliance_sources(db)
         finally:
             db.close()

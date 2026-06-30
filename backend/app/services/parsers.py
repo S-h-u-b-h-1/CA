@@ -76,65 +76,60 @@ class Form26ASParser(BaseParser):
                         name_val = name_val.split(marker)[0].strip()
                 facts["taxpayer_name"] = name_val
 
-        # 2. Extract TDS Entries / Deductors
-        deductor_regex = r"(?:Deductor\s+Name|Name\s+of\s+Deductor)\s*[:\-]?\s*([^\n|]+?)\s*(?:TAN|TAN\s+of\s+Deductor)\s*[:\-]?\s*([A-Z]{4}[0-9]{5}[A-Z]{1})"
-        for m in re.finditer(deductor_regex, text, re.IGNORECASE):
-            d_name = m.group(1).strip()
-            d_tan = m.group(2).upper()
-            facts["deductors"].append({
-                "deductor_name": d_name,
-                "deductor_tan": d_tan,
-                "total_tds": 0.0,
-                "total_tcs": 0.0
-            })
+        # 2. Extract TDS Entries / Deductors using line-by-line iteration
+        lines = [l.strip() for l in text.split("\n") if l.strip()]
+        
+        # Pattern for Deductor header: e.g. "1 GRAP DEVELOPERS LLP CALG13176C 146096.00 9955.00 9955.00"
+        deductor_pattern = re.compile(
+            r"^\d+\s+([A-Z0-9\s().&,-]{3,80})\s+([A-Z]{4}[0-9]{5}[A-Z]{1})\s+([0-9.,-]+)\s+([0-9.,-]+)\s+([0-9.,-]+)",
+            re.IGNORECASE
+        )
+        
+        # Pattern for Transaction entry: e.g. "1 194A 31-Mar-2025 F 04-Jun-2025 - 55479.00 2774.00 2774.00"
+        trans_pattern = re.compile(
+            r"^\d+\s+([0-9]{3}[A-Z]?)\s+(\d{1,2}-[A-Za-z]{3}-\d{4})\s+([A-Z])\s+(\d{1,2}-[A-Za-z]{3}-\d{4})\s+([a-zA-Z0-9-]*)\s+([0-9.,-]+)\s+([0-9.,-]+)\s+([0-9.,-]+)",
+            re.IGNORECASE
+        )
 
-        # Fallback Deductor row parser (for layouts where headers are separate from data rows)
-        deductor_regex_fallback = r"\b([A-Z0-9\s().&,-]{3,50})\s+([A-Z]{4}[0-9]{5}[A-Z]{1})\s+([0-9,]+(?:\.[0-9]+)?)\s+([0-9,]+(?:\.[0-9]+)?)\s+([0-9,]+(?:\.[0-9]+)?)"
-        for m in re.finditer(deductor_regex_fallback, text):
-            d_name = m.group(1).strip()
-            d_name = re.sub(r"^\d+\s+", "", d_name).strip()
-            if "NAME" in d_name.upper() or "DEDUCTOR" in d_name.upper() or "TOTAL" in d_name.upper():
-                continue
-            d_tan = m.group(2).upper()
-            amt_paid = float(m.group(3).replace(",", ""))
-            tds_ded = float(m.group(4).replace(",", ""))
-            if not any(d["deductor_tan"] == d_tan for d in facts["deductors"]):
+        active_deductor_name = None
+        active_deductor_tan = None
+
+        for line in lines:
+            # Check for Deductor header
+            m_ded = deductor_pattern.match(line)
+            if m_ded:
+                active_deductor_name = m_ded.group(1).strip()
+                active_deductor_tan = m_ded.group(2).strip().upper()
+                total_paid = float(m_ded.group(3).replace(",", ""))
+                total_tds = float(m_ded.group(4).replace(",", ""))
                 facts["deductors"].append({
-                    "deductor_name": d_name,
-                    "deductor_tan": d_tan,
-                    "total_tds": tds_ded,
+                    "deductor_name": active_deductor_name,
+                    "deductor_tan": active_deductor_tan,
+                    "total_tds": total_tds,
                     "total_tcs": 0.0
                 })
+                continue
+                
+            # Check for transaction row
+            m_tr = trans_pattern.match(line)
+            if m_tr:
+                sec = m_tr.group(1).strip()
+                amt_paid = float(m_tr.group(6).replace(",", ""))
+                tds = float(m_tr.group(7).replace(",", ""))
+                facts["tds_entries"].append({
+                    "deductor_name": active_deductor_name,
+                    "deductor_tan": active_deductor_tan,
+                    "section": sec,
+                    "section_code": sec,
+                    "amount_paid": amt_paid,
+                    "amount_credited": amt_paid,
+                    "tax_deducted": tds,
+                    "tax_deposited": tds,
+                    "raw_row_text": line
+                })
+                facts["total_tds"] += tds
 
-        # Regex for transaction detail rows: Section 194C, 194J, etc.
-        tds_entry_regex = r"(?:Section|Sec)\s+([0-9A-Z]{4,5})\s+(?:Amount\s+Paid|Amount\s+Credited)\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)\s+(?:Tax\s+Deducted|TDS)\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)"
-        for m in re.finditer(tds_entry_regex, text, re.IGNORECASE):
-            sec = m.group(1).strip()
-            amt_paid = float(m.group(2).replace(",", ""))
-            tds = float(m.group(3).replace(",", ""))
-            facts["tds_entries"].append({
-                "section": sec,
-                "amount_paid": amt_paid,
-                "tax_deducted": tds,
-                "tax_deposited": tds
-            })
-            facts["total_tds"] += tds
-
-        # Fallback TDS entries
-        tds_entry_regex_fallback = r"\b([0-9]{3}[A-Z]?)\s+(\d{1,2}-[A-Za-z]{3}-\d{4})\s+([A-Z])\s+(\d{1,2}-[A-Za-z]{3}-\d{4})\s+([a-zA-Z0-9-]*)\s+([0-9.-]+)\s+([0-9.-]+)\s+([0-9.-]+)"
-        for m in re.finditer(tds_entry_regex_fallback, text):
-            sec = m.group(1).strip()
-            amt_paid = float(m.group(6).replace(",", ""))
-            tds = float(m.group(7).replace(",", ""))
-            facts["tds_entries"].append({
-                "section": sec,
-                "amount_paid": amt_paid,
-                "tax_deducted": tds,
-                "tax_deposited": tds
-            })
-            facts["total_tds"] += tds
-
-        # Challan entries
+        # 3. Extract Challan entries using regex
         challan_regex = r"Challan\s+No\s*[:\-]?\s*([0-9]+)\s+BSR\s+Code\s*[:\-]?\s*([0-9]+)\s+Amount\s*[:\-]?\s*([0-9,]+)"
         for m in re.finditer(challan_regex, text, re.IGNORECASE):
             c_num = m.group(1)
