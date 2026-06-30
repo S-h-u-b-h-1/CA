@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     # AI Providers
     LLM_PROVIDER: str = "mock"
     EMBEDDING_PROVIDER: str = "mock"
-    OCR_PROVIDER: str = "mock"
+    OCR_PROVIDER: str = "tesseract"
 
     OPENAI_API_KEY: Optional[str] = None
     GEMINI_API_KEY: Optional[str] = None
