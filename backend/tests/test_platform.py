@@ -7,7 +7,7 @@ from datetime import datetime
 from app.core.database import Base
 from app.models.models import Organization, User, RawDocument, ProcessedDocument, StructuredInvoiceData, StructuredNoticeData
 from app.services.deduplication import DeduplicationEngine, compute_simhash, get_hamming_distance
-from app.services.parsers import ParserRegistry, InvoiceParser, NoticeParser, BalanceSheetParser
+from app.services.parsers import ParserRegistry, InvoiceParser, IncomeTaxNoticeParser, BalanceSheetParser
 from app.services.pipeline import DocumentPipelineOrchestrator
 
 # Setup SQLite in-memory test database
@@ -113,7 +113,7 @@ def test_parsers():
     assert inv_facts["total_amount"] == 11800.0
 
     # Test Notice Parser
-    notice_parser = NoticeParser()
+    notice_parser = IncomeTaxNoticeParser()
     notice_facts = notice_parser.parse(notice_text)
     assert notice_facts["assessment_year"] == "2025-26"
     assert notice_facts["section"] == "Section 148"

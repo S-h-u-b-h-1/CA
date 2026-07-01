@@ -129,6 +129,50 @@ class Form26ASParser(BaseParser):
                 })
                 facts["total_tds"] += tds
 
+        # 2b. Fallback for simpler "label: value" style Form 26AS text that doesn't match the
+        # fixed-width tabular row patterns above (e.g. "Name of Deductor: X TAN: Y" followed by
+        # "Section 194C Amount Paid: 5,00,000 TDS: 10,000" on separate lines).
+        if not facts["tds_entries"]:
+            fallback_deductor_name = None
+            fallback_deductor_tan = None
+            for line in lines:
+                ded_fallback = re.search(
+                    r"Name\s+of\s+Deductor\s*[:\-]?\s*([^\n]+?)\s+TAN\s*[:\-]?\s*([A-Z]{4}[0-9]{5}[A-Z]{1})",
+                    line, re.IGNORECASE
+                )
+                if ded_fallback:
+                    fallback_deductor_name = ded_fallback.group(1).strip()
+                    fallback_deductor_tan = ded_fallback.group(2).strip().upper()
+                    continue
+
+                sec_fallback = re.search(
+                    r"Section\s+([0-9A-Z]+)\s+Amount\s+Paid\s*[:\-]?\s*([0-9,]+(?:\.[0-9]+)?)\s+TDS\s*[:\-]?\s*([0-9,]+(?:\.[0-9]+)?)",
+                    line, re.IGNORECASE
+                )
+                if sec_fallback:
+                    amt_paid = float(sec_fallback.group(2).replace(",", ""))
+                    tds = float(sec_fallback.group(3).replace(",", ""))
+                    facts["tds_entries"].append({
+                        "deductor_name": fallback_deductor_name,
+                        "deductor_tan": fallback_deductor_tan,
+                        "section": sec_fallback.group(1),
+                        "section_code": sec_fallback.group(1),
+                        "amount_paid": amt_paid,
+                        "amount_credited": amt_paid,
+                        "tax_deducted": tds,
+                        "tax_deposited": tds,
+                        "raw_row_text": line
+                    })
+                    facts["total_tds"] += tds
+
+            if fallback_deductor_name and not facts["deductors"]:
+                facts["deductors"].append({
+                    "deductor_name": fallback_deductor_name,
+                    "deductor_tan": fallback_deductor_tan,
+                    "total_tds": facts["total_tds"],
+                    "total_tcs": 0.0
+                })
+
         # 3. Extract Challan entries using regex
         challan_regex = r"Challan\s+No\s*[:\-]?\s*([0-9]+)\s+BSR\s+Code\s*[:\-]?\s*([0-9]+)\s+Amount\s*[:\-]?\s*([0-9,]+)"
         for m in re.finditer(challan_regex, text, re.IGNORECASE):
@@ -158,6 +202,11 @@ class AISParser(BaseParser):
             "total_reported_value": 0.0,
             "information_category_count": 0,
             "source_count": 0,
+            "bank_interest": 0.0,
+            "dividend": 0.0,
+            "salary": 0.0,
+            "sale_transactions": 0.0,
+            "high_value_transactions": False,
             "entries": []
         }
 
@@ -253,6 +302,18 @@ class AISParser(BaseParser):
                     "raw_row_text": line
                 })
                 facts["total_reported_value"] += val
+
+                if transaction_type == "Interest":
+                    facts["bank_interest"] += val
+                elif transaction_type == "Dividend":
+                    facts["dividend"] += val
+                elif transaction_type == "Salary":
+                    facts["salary"] += val
+                elif transaction_type in ("Securities", "Mutual Fund"):
+                    facts["sale_transactions"] += val
+
+                if val > 1000000:
+                    facts["high_value_transactions"] = True
 
         facts["information_category_count"] = len(facts["entries"])
         facts["source_count"] = len(sources_seen)
@@ -592,6 +653,34 @@ class InvoiceParser(BaseParser):
         taxable_match = re.search(r"Taxable\s+Value\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
         if taxable_match:
             facts["taxable_value"] = float(taxable_match.group(1).replace(",", ""))
+
+        cgst_match = re.search(r"(?:CGST|Central\s+Tax)\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
+        if cgst_match:
+            facts["cgst"] = float(cgst_match.group(1).replace(",", ""))
+
+        sgst_match = re.search(r"(?:SGST|State\s+Tax)\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
+        if sgst_match:
+            facts["sgst"] = float(sgst_match.group(1).replace(",", ""))
+
+        igst_match = re.search(r"(?:IGST|Integrated\s+Tax)\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
+        if igst_match:
+            facts["igst"] = float(igst_match.group(1).replace(",", ""))
+
+        cess_match = re.search(r"Cess\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
+        if cess_match:
+            facts["cess"] = float(cess_match.group(1).replace(",", ""))
+
+        total_match = re.search(r"Total\s+Amount\s*[:\-]?\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
+        if total_match:
+            facts["total_amount"] = float(total_match.group(1).replace(",", ""))
+
+        place_match = re.search(r"Place\s+of\s+Supply\s*[:\-]?\s*([^\n]+)", text, re.IGNORECASE)
+        if place_match:
+            facts["place_of_supply"] = place_match.group(1).strip()
+
+        hsn_match = re.search(r"HSN\s*(?:Code)?\s*[:\-]?\s*([0-9]{4,8})", text, re.IGNORECASE)
+        if hsn_match:
+            facts["hsn_code"] = hsn_match.group(1).strip()
 
         facts["invoice_date"] = datetime.utcnow()
         return facts
