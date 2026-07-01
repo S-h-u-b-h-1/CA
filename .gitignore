@@ -19,3 +19,5 @@ coverage/
 uploads/
 .vercel
 .env*
+!.env.example
+!*/.env.example
