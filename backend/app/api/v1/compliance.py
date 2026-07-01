@@ -312,11 +312,12 @@ def get_client_compliance_profile(
 ):
     client = db.query(Client).filter(
         Client.id == client_id,
-        Client.organization_id == current_user.organization_id
+        Client.organization_id == current_user.organization_id,
+        Client.deleted_at.is_(None)
     ).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
-        
+
     profiles = db.query(ComplianceProfile).filter(ComplianceProfile.client_id == client_id).all()
     tasks = db.query(ComplianceTask).filter(ComplianceTask.client_id == client_id).all()
     history = db.query(ComplianceHistory).filter(ComplianceHistory.client_id == client_id).all()
@@ -339,11 +340,12 @@ def create_client_compliance_profile(
 ):
     client = db.query(Client).filter(
         Client.id == payload.client_id,
-        Client.organization_id == current_user.organization_id
+        Client.organization_id == current_user.organization_id,
+        Client.deleted_at.is_(None)
     ).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
-        
+
     profile = ComplianceProfile(
         organization_id=current_user.organization_id,
         client_id=payload.client_id,

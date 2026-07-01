@@ -105,8 +105,6 @@ def run_schema_migration(db):
         except Exception:
             db.rollback()
 
-    print("Schema Migration: Compliance intelligence tables initialized successfully.")
-
 # Startup Seeding Events
 @app.on_event("startup")
 def startup_event():

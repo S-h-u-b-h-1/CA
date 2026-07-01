@@ -1213,8 +1213,8 @@ class ComplianceTask(Base):
     due_date = Column(DateTime, nullable=False)
     priority = Column(String(50), default="MEDIUM")  # LOW, MEDIUM, HIGH, URGENT
     status = Column(String(50), default="PENDING")  # PENDING, IN_PROGRESS, COMPLETED, MISSED
-    assigned_user_id = Column(String(36), nullable=True)
-    document_id = Column(String(36), nullable=True)
+    assigned_user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    document_id = Column(String(36), ForeignKey("raw_documents.id"), nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -1240,7 +1240,7 @@ class ComplianceAlert(Base):
     id = Column(String(36), primary_key=True, default=generate_uuid)
     organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
     client_id = Column(String(36), ForeignKey("clients.id"), nullable=False)
-    task_id = Column(String(36), nullable=True)
+    task_id = Column(String(36), ForeignKey("compliance_tasks.id"), nullable=True)
     alert_type = Column(String(100), nullable=False)  # DUE_TODAY, DUE_TOMORROW, OVERDUE, MISSING_DOCUMENTS, HIGH_RISK
     message = Column(Text, nullable=False)
     is_resolved = Column(Boolean, default=False)
