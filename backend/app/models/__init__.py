@@ -1,83 +1,17 @@
-from app.core.database import Base
-from app.models.models import (
-    Organization,
-    User,
-    Client,
-    Document,
-    DocumentProcessingJob,
-    DocumentTextChunk,
-    ComplianceSource,
-    Note,
-    ExternalSystem,
-    IntegrationToken,
-    SyncLog,
-    AuditLog,
-    
-    # Phase 2 Models
-    RawDocument,
-    ProcessedDocument,
-    StructuredDocument,
-    StructuredInvoiceData,
-    StructuredNoticeData,
-    StructuredReturnData,
-    StructuredBankStatement,
-    KnowledgeChunk,
-    Embedding,
-    Entity,
-    EntityRelationship,
-    Citation,
-    DocumentVersion,
-    ProcessingPipeline,
-    ProcessingError,
-    KnowledgeGraphNode,
-    KnowledgeGraphEdge,
-    GovernmentSource,
-    GovernmentUpdate,
-    ParserRegistry,
-    AIJob,
-    # Phase 3 Models
-    GovernmentUpdateVersion,
-    ConnectorSyncLog,
-)
+import inspect
 
-__all__ = [
-    "Base",
-    "Organization",
-    "User",
-    "Client",
-    "Document",
-    "DocumentProcessingJob",
-    "DocumentTextChunk",
-    "ComplianceSource",
-    "Note",
-    "ExternalSystem",
-    "IntegrationToken",
-    "SyncLog",
-    "AuditLog",
-    
-    # Phase 2 Models
-    "RawDocument",
-    "ProcessedDocument",
-    "StructuredDocument",
-    "StructuredInvoiceData",
-    "StructuredNoticeData",
-    "StructuredReturnData",
-    "StructuredBankStatement",
-    "KnowledgeChunk",
-    "Embedding",
-    "Entity",
-    "EntityRelationship",
-    "Citation",
-    "DocumentVersion",
-    "ProcessingPipeline",
-    "ProcessingError",
-    "KnowledgeGraphNode",
-    "KnowledgeGraphEdge",
-    "GovernmentSource",
-    "GovernmentUpdate",
-    "ParserRegistry",
-    "AIJob",
-    # Phase 3 Models
-    "GovernmentUpdateVersion",
-    "ConnectorSyncLog",
-]
+from app.core.database import Base
+from app.models import models as _models
+
+# Re-export every SQLAlchemy model class defined in app.models.models automatically,
+# rather than a hand-maintained list, so this package can never silently fall out of
+# sync with new models again (it previously only exported 28 of 69 models).
+_model_classes = {
+    name: obj
+    for name, obj in vars(_models).items()
+    if inspect.isclass(obj) and issubclass(obj, Base) and obj is not Base
+}
+
+globals().update(_model_classes)
+
+__all__ = ["Base"] + sorted(_model_classes.keys())
