@@ -34,4 +34,23 @@ class Settings(BaseSettings):
         env_file = ".env"
         extra = "ignore"
 
+
+def _validate_production_settings(s: "Settings") -> None:
+    """Refuse to boot with insecure defaults if ENV=production - fail loud at startup
+    rather than silently serving traffic with a public, source-committed JWT secret
+    or a wildcard CORS policy."""
+    if s.ENV != "production":
+        return
+    errors = []
+    if s.JWT_SECRET == "supersecretjwtkeyforlocaldevelopmentonly123!":
+        errors.append("JWT_SECRET must be overridden in production (found the committed dev default).")
+    if s.CORS_ORIGINS.strip() in ("", "*"):
+        errors.append("CORS_ORIGINS must be a specific comma-separated origin list in production (found '*').")
+    if errors:
+        raise RuntimeError(
+            "Refusing to start with insecure production configuration:\n- " + "\n- ".join(errors)
+        )
+
+
 settings = Settings()
+_validate_production_settings(settings)

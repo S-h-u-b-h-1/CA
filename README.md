@@ -56,8 +56,8 @@ graph TD
 ### Backend Configuration (`backend/.env`)
 ```env
 ENV=production
-DATABASE_URL=postgresql://neondb_owner:npg_J2N0dOsbylxg@ep-patient-lake-adf601qx-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
-JWT_SECRET=supersecretjwtkeyforproductiononly987!
+DATABASE_URL=postgresql://<user>:<password>@<neon-host>/<database>?sslmode=require&channel_binding=require
+JWT_SECRET=<generate a long random secret - never reuse the local dev default>
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=1440
 CORS_ORIGINS=http://localhost:3000,https://ca-intelligence-frontend.vercel.app
