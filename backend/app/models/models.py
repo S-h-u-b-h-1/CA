@@ -1184,3 +1184,65 @@ class ClientTimelineEvent(Base):
     description = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+
+class ComplianceProfile(Base):
+    __tablename__ = "compliance_profiles"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=False)
+    compliance_type = Column(String(100), nullable=False)  # GST, Income Tax, TDS, TCS, PF, ESI, ROC/MCA, etc.
+    registration_number = Column(String(100), nullable=True)
+    frequency = Column(String(50), default="MONTHLY")  # MONTHLY, QUARTERLY, ANNUALLY
+    due_day = Column(Integer, default=20)  # e.g., 20th of the month
+    assigned_manager = Column(String(255), nullable=True)
+    assigned_partner = Column(String(255), nullable=True)
+    risk_level = Column(String(50), default="LOW")  # LOW, MEDIUM, HIGH
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ComplianceTask(Base):
+    __tablename__ = "compliance_tasks"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=False)
+    profile_id = Column(String(36), ForeignKey("compliance_profiles.id"), nullable=False)
+    task_name = Column(String(255), nullable=False)
+    due_date = Column(DateTime, nullable=False)
+    priority = Column(String(50), default="MEDIUM")  # LOW, MEDIUM, HIGH, URGENT
+    status = Column(String(50), default="PENDING")  # PENDING, IN_PROGRESS, COMPLETED, MISSED
+    assigned_user_id = Column(String(36), nullable=True)
+    document_id = Column(String(36), nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ComplianceHistory(Base):
+    __tablename__ = "compliance_history"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=False)
+    task_id = Column(String(36), ForeignKey("compliance_tasks.id"), nullable=False)
+    filing_date = Column(DateTime, default=datetime.utcnow)
+    acknowledgement_number = Column(String(255), nullable=True)
+    status = Column(String(50), default="ON_TIME")  # ON_TIME, LATE
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ComplianceAlert(Base):
+    __tablename__ = "compliance_alerts"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False)
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=False)
+    task_id = Column(String(36), nullable=True)
+    alert_type = Column(String(100), nullable=False)  # DUE_TODAY, DUE_TOMORROW, OVERDUE, MISSING_DOCUMENTS, HIGH_RISK
+    message = Column(Text, nullable=False)
+    is_resolved = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+

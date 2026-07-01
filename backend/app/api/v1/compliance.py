@@ -283,3 +283,159 @@ def get_document_versions(
             for v in versions
         ]
     }
+
+
+from app.schemas.compliance_schemas import (
+    ComplianceProfileCreate, ComplianceProfileSchema, ComplianceTaskCreate,
+    ComplianceTaskSchema, ComplianceHistorySchema, ComplianceAlertSchema,
+    ComplianceDashboardResponse
+)
+from app.services.compliance_service import ComplianceService
+from app.models.models import ComplianceProfile, ComplianceTask, ComplianceHistory, ComplianceAlert, Client
+
+@router.get("/dashboard", response_model=ComplianceDashboardResponse)
+def get_compliance_dashboard_view(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    try:
+        data = ComplianceService.get_dashboard_data(db, current_user.organization_id)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/clients/{client_id}")
+def get_client_compliance_profile(
+    client_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    client = db.query(Client).filter(
+        Client.id == client_id,
+        Client.organization_id == current_user.organization_id
+    ).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+        
+    profiles = db.query(ComplianceProfile).filter(ComplianceProfile.client_id == client_id).all()
+    tasks = db.query(ComplianceTask).filter(ComplianceTask.client_id == client_id).all()
+    history = db.query(ComplianceHistory).filter(ComplianceHistory.client_id == client_id).all()
+    health_score, health_val = ComplianceService.compute_health_score(db, client_id)
+
+    return {
+        "client_name": client.client_name,
+        "health_score": health_score,
+        "health_score_value": health_val,
+        "profiles": profiles,
+        "tasks": tasks,
+        "history": history
+    }
+
+@router.post("/profile", response_model=ComplianceProfileSchema)
+def create_client_compliance_profile(
+    payload: ComplianceProfileCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    client = db.query(Client).filter(
+        Client.id == payload.client_id,
+        Client.organization_id == current_user.organization_id
+    ).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+        
+    profile = ComplianceProfile(
+        organization_id=current_user.organization_id,
+        client_id=payload.client_id,
+        compliance_type=payload.compliance_type,
+        registration_number=payload.registration_number,
+        frequency=payload.frequency or "MONTHLY",
+        due_day=payload.due_day or 20,
+        assigned_manager=payload.assigned_manager,
+        assigned_partner=payload.assigned_partner,
+        risk_level=payload.risk_level or "LOW"
+    )
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+    
+    # Generate tasks
+    ComplianceService.generate_recurring_tasks(db, profile)
+    return profile
+
+@router.get("/calendar", response_model=List[ComplianceTaskSchema])
+def get_compliance_calendar_events(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    tasks = db.query(ComplianceTask).filter(
+        ComplianceTask.organization_id == current_user.organization_id
+    ).order_by(ComplianceTask.due_date.asc()).all()
+    return tasks
+
+@router.post("/task", response_model=ComplianceTaskSchema)
+def create_manual_compliance_task(
+    payload: ComplianceTaskCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    task = ComplianceTask(
+        organization_id=current_user.organization_id,
+        client_id=payload.client_id,
+        profile_id=payload.profile_id,
+        task_name=payload.task_name,
+        due_date=payload.due_date,
+        priority=payload.priority or "MEDIUM",
+        status=payload.status or "PENDING",
+        assigned_user_id=payload.assigned_user_id,
+        notes=payload.notes
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return task
+
+@router.put("/task/{id}", response_model=ComplianceTaskSchema)
+def update_compliance_task_route(
+    id: str,
+    payload: ComplianceTaskCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    task = db.query(ComplianceTask).filter(
+        ComplianceTask.id == id,
+        ComplianceTask.organization_id == current_user.organization_id
+    ).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Compliance task not found")
+        
+    old_status = task.status
+    task.task_name = payload.task_name
+    task.due_date = payload.due_date
+    task.priority = payload.priority or "MEDIUM"
+    if payload.status:
+        task.status = payload.status
+    task.assigned_user_id = payload.assigned_user_id
+    task.notes = payload.notes
+    
+    db.commit()
+    
+    # If completed, route to complete helper
+    if payload.status == "COMPLETED" and old_status != "COMPLETED":
+        ComplianceService.complete_task(db, id, None, payload.notes)
+        
+    db.refresh(task)
+    return task
+
+@router.get("/alerts", response_model=List[ComplianceAlertSchema])
+def get_compliance_alerts_list(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # Scan daily alerts
+    ComplianceService.generate_daily_alerts(db, current_user.organization_id)
+    alerts = db.query(ComplianceAlert).filter(
+        ComplianceAlert.organization_id == current_user.organization_id,
+        ComplianceAlert.is_resolved == False
+    ).all()
+    return alerts
