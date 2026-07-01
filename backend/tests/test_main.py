@@ -26,11 +26,14 @@ def override_get_db():
     finally:
         db.close()
 
-app.dependency_overrides[get_db] = override_get_db
 client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def run_around_tests():
+    # Setup: re-assert this module's override on every test, since app.dependency_overrides
+    # is a single dict shared across every test module importing the same `app` singleton -
+    # whichever module set it last (at import time or in another module's fixture) otherwise wins.
+    app.dependency_overrides[get_db] = override_get_db
     # Setup: Create tables
     Base.metadata.create_all(bind=engine)
     # Seed compliance sources for test environment

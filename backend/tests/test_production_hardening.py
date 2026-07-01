@@ -5,6 +5,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 import io
 
+import app.core.database as database_module
 from app.main import app
 from app.core.database import Base, get_db
 from app.models.models import Organization, User, Client, Document, ComplianceSource, Citation
@@ -27,11 +28,19 @@ def override_get_db():
     finally:
         db.close()
 
-app.dependency_overrides[get_db] = override_get_db
 client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def run_around_tests():
+    # Setup: re-assert this module's override on every test, since app.dependency_overrides
+    # is a single dict shared across every test module importing the same `app` singleton -
+    # whichever module set it last (at import time or in another module's fixture) otherwise wins.
+    app.dependency_overrides[get_db] = override_get_db
+    # Document upload triggers a background pipeline task that imports app.core.database.SessionLocal
+    # directly (bypassing FastAPI's dependency-injection override) - patch it too so background
+    # processing during this test hits the same in-memory test DB, not the real configured one.
+    original_session_local = database_module.SessionLocal
+    database_module.SessionLocal = TestingSessionLocal
     # Setup: Create tables
     Base.metadata.create_all(bind=engine)
     db = TestingSessionLocal()
@@ -43,6 +52,7 @@ def run_around_tests():
     # Teardown: Drop all tables and overrides
     Base.metadata.drop_all(bind=engine)
     app.dependency_overrides.clear()
+    database_module.SessionLocal = original_session_local
     app.dependency_overrides[get_db] = override_get_db
 
 def create_test_auth_headers():

@@ -5,6 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import app.core.database as database_module
 from app.main import app
 from app.core.database import Base, get_db
 from app.models.models import (
@@ -36,8 +37,14 @@ client = TestClient(app)
 def setup_test_db():
     Base.metadata.create_all(bind=engine)
     app.dependency_overrides[get_db] = override_get_db
+    # Document upload triggers a background pipeline task that imports app.core.database.SessionLocal
+    # directly (bypassing FastAPI's dependency-injection override) - patch it too so background
+    # processing during this test hits the same in-memory test DB, not the real configured one.
+    original_session_local = database_module.SessionLocal
+    database_module.SessionLocal = TestingSessionLocal
     yield
     app.dependency_overrides.clear()
+    database_module.SessionLocal = original_session_local
     Base.metadata.drop_all(bind=engine)
 
 def get_token_for(email: str):
