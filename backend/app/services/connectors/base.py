@@ -102,6 +102,13 @@ class BaseConnector(ABC):
             db.add(source)
             db.commit()
             db.refresh(source)
+        else:
+            # Keep official_url/rate_limits current for pre-existing rows too -
+            # otherwise a source created under a stale/mock implementation would
+            # display the wrong URL forever, only ever set once at creation time.
+            source.official_url = self.get_official_url()
+            source.rate_limits = self.get_rate_limits()
+            db.commit()
 
         if source.connector_status == "PAUSED":
             return {"status": "PAUSED", "documents_downloaded": 0, "message": "Connector sync is paused."}
