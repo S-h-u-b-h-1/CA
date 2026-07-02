@@ -1246,3 +1246,50 @@ class ComplianceAlert(Base):
     is_resolved = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+
+class Suggestion(Base):
+    __tablename__ = "suggestions"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=False, index=True)
+    rule_key = Column(String(100), nullable=False, index=True)  # e.g. "TAX_PAN_MISMATCH", "COMPLIANCE_OVERDUE_TASK"
+    category = Column(String(50), nullable=False)  # TAX, COMPLIANCE, DOCUMENTS, RESEARCH
+    title = Column(String(500), nullable=False)
+    severity = Column(String(20), nullable=False)  # CRITICAL, HIGH, MEDIUM, LOW
+    confidence = Column(String(20), nullable=False)  # HIGH, MEDIUM, LOW
+    confidence_reason = Column(Text, nullable=True)
+    explanation = Column(Text, nullable=False)
+    recommendation = Column(Text, nullable=True)
+    related_document_ids = Column(JSON, nullable=True)
+    related_government_update_id = Column(String(36), ForeignKey("government_updates.id"), nullable=True)
+    dedup_key = Column(String(255), nullable=False, index=True)
+    # Lifecycle: NEW -> ACKNOWLEDGED -> IN_PROGRESS -> RESOLVED, with DISMISSED reachable
+    # from any non-terminal state. RESOLVED/DISMISSED are terminal; every transition is
+    # additionally written to AuditLog (entity_type="Suggestion") for full history.
+    status = Column(String(20), default="NEW")
+    acknowledged_at = Column(DateTime, nullable=True)
+    in_progress_at = Column(DateTime, nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
+    dismissed_at = Column(DateTime, nullable=True)
+    dismissed_by = Column(String(36), ForeignKey("users.id"), nullable=True)
+    dismissed_reason = Column(Text, nullable=True)
+    generated_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    evidence = relationship("SuggestionEvidence", back_populates="suggestion", cascade="all, delete-orphan")
+
+
+class SuggestionEvidence(Base):
+    __tablename__ = "suggestion_evidence"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    suggestion_id = Column(String(36), ForeignKey("suggestions.id"), nullable=False, index=True)
+    evidence_type = Column(String(50), nullable=False)  # FORM_26AS, AIS, TIS, DOCUMENT, COMPLIANCE_TASK, COMPLIANCE_PROFILE, COMPLIANCE_HISTORY, GOVERNMENT_UPDATE, CLIENT
+    reference_id = Column(String(36), nullable=True)
+    summary = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    suggestion = relationship("Suggestion", back_populates="evidence")
+
