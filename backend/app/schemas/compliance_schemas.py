@@ -105,5 +105,8 @@ class ComplianceDashboardResponse(BaseModel):
     total_returns_completed: int
     total_returns_pending: int
     total_returns_overdue: int
+    due_today: int
+    due_this_week: int
+    due_this_month: int
     upcoming_deadlines: List[ComplianceTaskSchema]
     recent_alerts: List[ComplianceAlertSchema]

@@ -214,6 +214,30 @@ export const ComplianceWorkspace: React.FC<ComplianceWorkspaceProps> = ({
               </div>
             </div>
 
+            <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+              <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Due Today</p>
+              <div className="flex justify-between items-baseline mt-2">
+                <span className="text-2xl font-black text-amber-600">{dashboard.due_today}</span>
+                <span className="text-xs font-bold text-amber-600">Filing Window</span>
+              </div>
+            </div>
+
+            <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+              <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Due This Week</p>
+              <div className="flex justify-between items-baseline mt-2">
+                <span className="text-2xl font-black text-blue-900">{dashboard.due_this_week}</span>
+                <span className="text-xs font-bold text-blue-900">Upcoming</span>
+              </div>
+            </div>
+
+            <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+              <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Due This Month</p>
+              <div className="flex justify-between items-baseline mt-2">
+                <span className="text-2xl font-black text-slate-800">{dashboard.due_this_month}</span>
+                <span className="text-xs font-bold text-slate-500">Planning Horizon</span>
+              </div>
+            </div>
+
           </div>
 
           {/* 2. Search and Navigation Tabs */}

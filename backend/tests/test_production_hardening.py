@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+from datetime import datetime, timedelta
 import io
 
 import app.core.database as database_module
@@ -341,3 +342,144 @@ def test_compliance_task_ownership_validation():
         "due_date": "2026-08-01T00:00:00",
     }, headers=headers_b)
     assert task_res.status_code == 404
+
+
+def test_compliance_dashboard_due_date_buckets():
+    headers = create_test_auth_headers()
+    c_res = client.post("/api/v1/clients", json={"client_name": "Bucket Co", "client_type": "Corporate"}, headers=headers)
+    client_id = c_res.json()["id"]
+
+    # Creating a MONTHLY profile auto-generates 12 real recurring tasks
+    # (see ComplianceService.generate_recurring_tasks) spread across the next
+    # year - real, non-hardcoded due dates to bucket against.
+    p_res = client.post("/api/v1/compliance/profile", json={
+        "client_id": client_id,
+        "compliance_type": "GST",
+        "frequency": "MONTHLY",
+        "due_day": 20,
+    }, headers=headers)
+    profile_id = p_res.json()["id"]
+
+    # A handful of manual tasks with tightly controlled offsets guarantee
+    # real, non-zero coverage of the overdue/today/week buckets regardless
+    # of which day the suite happens to run on.
+    now = datetime.utcnow()
+    manual_offsets_hours = [-24, 2, 72]
+    for i, h in enumerate(manual_offsets_hours):
+        res = client.post("/api/v1/compliance/task", json={
+            "client_id": client_id,
+            "profile_id": profile_id,
+            "task_name": f"Manual Bucket Task {i}",
+            "due_date": (now + timedelta(hours=h)).isoformat(),
+        }, headers=headers)
+        assert res.status_code == 200
+
+    # Pull every real task back out and independently recompute the expected
+    # bucket counts from their live due_date values - not hardcoded numbers.
+    cal_res = client.get("/api/v1/compliance/calendar", headers=headers)
+    assert cal_res.status_code == 200
+    all_tasks = [t for t in cal_res.json() if t["client_id"] == client_id]
+    assert len(all_tasks) >= 12 + len(manual_offsets_hours)
+
+    now2 = datetime.utcnow()
+    today_start = datetime(now2.year, now2.month, now2.day)
+    tomorrow_start = today_start + timedelta(days=1)
+    week_end = today_start + timedelta(days=7 - now2.weekday())
+    month_end = datetime(now2.year + 1, 1, 1) if now2.month == 12 else datetime(now2.year, now2.month + 1, 1)
+
+    pending_dues = [datetime.fromisoformat(t["due_date"]) for t in all_tasks if t["status"] != "COMPLETED"]
+    expected_overdue = sum(1 for d in pending_dues if d < now2)
+    expected_today = sum(1 for d in pending_dues if now2 <= d < tomorrow_start)
+    expected_week = sum(1 for d in pending_dues if now2 <= d < week_end)
+    expected_month = sum(1 for d in pending_dues if now2 <= d < month_end)
+
+    dash_res = client.get("/api/v1/compliance/dashboard", headers=headers)
+    assert dash_res.status_code == 200
+    dash = dash_res.json()
+
+    assert dash["total_returns_overdue"] == expected_overdue
+    assert dash["due_today"] == expected_today
+    assert dash["due_this_week"] == expected_week
+    assert dash["due_this_month"] == expected_month
+
+    # Sanity: the manually crafted offsets guarantee non-trivial coverage.
+    assert expected_overdue >= 1
+    assert expected_today >= 1
+    assert dash["due_today"] <= dash["due_this_week"] <= dash["due_this_month"]
+
+
+def test_intelligence_rules_registry_endpoint():
+    headers = create_test_auth_headers()
+    res = client.get("/api/v1/intelligence/rules", headers=headers)
+    assert res.status_code == 200
+    rules = res.json()
+    keys = {r["rule_key"] for r in rules}
+    assert "COMPLIANCE_OVERDUE_TASK" in keys
+    assert "TAX_MISSING_DEDUCTIONS" in keys
+    not_yet = next(r for r in rules if r["rule_key"] == "TAX_MISSING_DEDUCTIONS")
+    assert not_yet["status"] == "NOT_YET_SUPPORTED"
+    assert not_yet["limitations"]
+
+
+def test_intelligence_regenerate_and_dashboard_end_to_end():
+    """Full API round-trip through the actual response_model boundary - this is the
+    layer a pure service-level unit test can't exercise, and where a real field-name
+    mismatch (RegenerateResponse.unchanged vs the engine's actual `refreshed` key)
+    was caught during manual browser verification. Guards against a regression."""
+    headers = create_test_auth_headers()
+    c_res = client.post("/api/v1/clients", json={"client_name": "Intel API Co", "client_type": "Company"}, headers=headers)
+    client_id = c_res.json()["id"]
+
+    regen_res = client.post(f"/api/v1/intelligence/regenerate/{client_id}", headers=headers)
+    assert regen_res.status_code == 200, regen_res.text
+    regen = regen_res.json()
+    assert regen["client_id"] == client_id
+    assert regen["generated"] >= 1  # a brand-new client with no compliance profile and no documents
+
+    dash_res = client.get("/api/v1/intelligence/dashboard", headers=headers)
+    assert dash_res.status_code == 200
+    dash = dash_res.json()
+    assert dash["total_open"] >= 1
+    matching = [s for s in dash["suggestions"] if s["client_id"] == client_id]
+    assert any(s["rule_key"] == "COMPLIANCE_MISSING_PROFILE" for s in matching)
+
+    # Client-scoped listing endpoint returns the same suggestions.
+    client_suggestions_res = client.get(f"/api/v1/intelligence/clients/{client_id}", headers=headers)
+    assert client_suggestions_res.status_code == 200
+    assert len(client_suggestions_res.json()) >= 1
+
+
+def test_intelligence_suggestion_status_lifecycle_via_api():
+    headers = create_test_auth_headers()
+    c_res = client.post("/api/v1/clients", json={"client_name": "Intel Lifecycle Co", "client_type": "Company"}, headers=headers)
+    client_id = c_res.json()["id"]
+    client.post(f"/api/v1/intelligence/regenerate/{client_id}", headers=headers)
+
+    suggestions = client.get(f"/api/v1/intelligence/clients/{client_id}", headers=headers).json()
+    suggestion_id = suggestions[0]["id"]
+
+    # Cannot skip straight to RESOLVED from NEW.
+    bad = client.put(f"/api/v1/intelligence/{suggestion_id}/status", json={"status": "RESOLVED"}, headers=headers)
+    assert bad.status_code == 400
+
+    ack = client.put(f"/api/v1/intelligence/{suggestion_id}/status", json={"status": "ACKNOWLEDGED"}, headers=headers)
+    assert ack.status_code == 200
+    assert ack.json()["status"] == "ACKNOWLEDGED"
+    assert ack.json()["acknowledged_at"] is not None
+
+
+def test_intelligence_regenerate_rejects_other_organizations_client():
+    headers_a = create_test_auth_headers()
+    c_res = client.post("/api/v1/clients", json={"client_name": "Org A Client", "client_type": "Company"}, headers=headers_a)
+    client_id = c_res.json()["id"]
+
+    reg_b = client.post("/api/v1/auth/register", json={
+        "organization_name": "Other Intel Firm", "firm_type": "Partnership",
+        "contact_email": "b@otherintel.com", "admin_first_name": "Org", "admin_last_name": "B",
+        "admin_email": "b@otherintel.com", "admin_password": "otherpassword123",
+    })
+    token_b = reg_b.json()["access_token"]
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+
+    res = client.post(f"/api/v1/intelligence/regenerate/{client_id}", headers=headers_b)
+    assert res.status_code == 404

@@ -285,6 +285,39 @@ class ComplianceService:
             ComplianceTask.due_date < now
         ).count()
 
+        # Due-date buckets, counted from `now` forward so they never overlap
+        # with total_overdue above (a task whose due_date has already passed
+        # is "overdue", not "due today").
+        today_start = datetime(now.year, now.month, now.day)
+        tomorrow_start = today_start + timedelta(days=1)
+        due_today = db.query(ComplianceTask).filter(
+            ComplianceTask.organization_id == org_id,
+            ComplianceTask.status != "COMPLETED",
+            ComplianceTask.due_date >= now,
+            ComplianceTask.due_date < tomorrow_start
+        ).count()
+
+        # End of the current ISO calendar week (next Monday, 00:00).
+        week_end = today_start + timedelta(days=7 - now.weekday())
+        due_this_week = db.query(ComplianceTask).filter(
+            ComplianceTask.organization_id == org_id,
+            ComplianceTask.status != "COMPLETED",
+            ComplianceTask.due_date >= now,
+            ComplianceTask.due_date < week_end
+        ).count()
+
+        # Start of next calendar month.
+        if now.month == 12:
+            month_end = datetime(now.year + 1, 1, 1)
+        else:
+            month_end = datetime(now.year, now.month + 1, 1)
+        due_this_month = db.query(ComplianceTask).filter(
+            ComplianceTask.organization_id == org_id,
+            ComplianceTask.status != "COMPLETED",
+            ComplianceTask.due_date >= now,
+            ComplianceTask.due_date < month_end
+        ).count()
+
         # 3. On-time filing rate
         history = db.query(ComplianceHistory).filter(ComplianceHistory.organization_id == org_id).all()
         on_time_filing_pct = 100.0
@@ -329,6 +362,9 @@ class ComplianceService:
             "total_returns_completed": total_completed,
             "total_returns_pending": total_pending,
             "total_returns_overdue": total_overdue,
+            "due_today": due_today,
+            "due_this_week": due_this_week,
+            "due_this_month": due_this_month,
             "upcoming_deadlines": upcoming,
             "recent_alerts": alerts
         }
