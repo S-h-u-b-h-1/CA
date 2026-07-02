@@ -10,6 +10,7 @@ import { TaxIntelligence } from "./TaxIntelligence";
 import { ITRPreparation } from "./ITRPreparation";
 import { TISView } from "./TISView";
 import { ResearchWorkspace } from "./ResearchWorkspace";
+import { ClientComplianceProfile } from "./ClientComplianceProfile";
 
 interface ClientWorkspaceProps {
   clients: any[];
@@ -577,6 +578,11 @@ export const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({ clients, onRef
                         </>
                       )}
                     </div>
+                  )}
+
+                  {/* Compliance Profile Tab */}
+                  {activeSubTab === "compliance" && (
+                    <ClientComplianceProfile clientId={selectedClient.id} />
                   )}
 
                   {/* Tax Intelligence Tab */}

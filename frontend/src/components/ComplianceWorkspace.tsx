@@ -3,19 +3,29 @@ import { api } from "../lib/api";
 import {
   Calendar as CalendarIcon, ClipboardList, CheckCircle2, AlertTriangle,
   Clock, ShieldAlert, Plus, Check, Search, Trash2, ArrowRight, UserCheck,
-  Building, RefreshCcw, LayoutGrid, ListFilter
+  Building, RefreshCcw, LayoutGrid, ListFilter, Database
 } from "lucide-react";
+import { ComplianceRegistry } from "./ComplianceRegistry";
 
 interface ComplianceWorkspaceProps {
   clients: any[];
+  complianceSources?: any[];
+  currentUser?: any;
+  onRefreshSources?: () => void;
 }
 
-export const ComplianceWorkspace: React.FC<ComplianceWorkspaceProps> = ({ clients }) => {
+export const ComplianceWorkspace: React.FC<ComplianceWorkspaceProps> = ({
+  clients,
+  complianceSources = [],
+  currentUser,
+  onRefreshSources = () => {},
+}) => {
   const [dashboard, setDashboard] = useState<any | null>(null);
   const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
   const [alerts, setAlerts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [complianceTypes, setComplianceTypes] = useState<any[]>([]);
 
   // Modal / Form state for new profile
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -28,6 +38,8 @@ export const ComplianceWorkspace: React.FC<ComplianceWorkspaceProps> = ({ client
   const [assignedManager, setAssignedManager] = useState("");
   const [assignedPartner, setAssignedPartner] = useState("");
 
+  const selectedTypeRule = complianceTypes.find((t) => t.key === complianceType || t.label === complianceType);
+
   // Tab state inside compliance
   const [complianceTab, setComplianceTab] = useState("overview"); // overview, calendar, kanban, table, alerts
 
@@ -36,7 +48,18 @@ export const ComplianceWorkspace: React.FC<ComplianceWorkspaceProps> = ({ client
 
   useEffect(() => {
     loadComplianceData();
+    api.getComplianceTypes().then(setComplianceTypes).catch(() => setComplianceTypes([]));
   }, []);
+
+  // When the CA picks a compliance type, prefill frequency/due day from the
+  // real registry default (where a safe one exists) - still fully editable,
+  // this is just a starting point, not an invented value silently applied.
+  const handleComplianceTypeChange = (typeKey: string) => {
+    setComplianceType(typeKey);
+    const rule = complianceTypes.find((t) => t.key === typeKey);
+    if (rule?.default_frequency) setFrequency(rule.default_frequency);
+    if (rule?.default_due_day) setDueDay(rule.default_due_day);
+  };
 
   const loadComplianceData = async () => {
     setLoading(true);
@@ -200,7 +223,8 @@ export const ComplianceWorkspace: React.FC<ComplianceWorkspaceProps> = ({ client
                 { id: "overview", label: "Overview & Agenda", icon: LayoutGrid },
                 { id: "calendar", label: "Filing Calendar", icon: CalendarIcon },
                 { id: "kanban", label: "Kanban Board", icon: ClipboardList },
-                { id: "alerts", label: "Compliance Alerts", icon: ShieldAlert }
+                { id: "alerts", label: "Compliance Alerts", icon: ShieldAlert },
+                { id: "sources", label: "Data Sources", icon: Database }
               ].map((tab) => {
                 const Icon = tab.icon;
                 return (
@@ -444,6 +468,15 @@ export const ComplianceWorkspace: React.FC<ComplianceWorkspaceProps> = ({ client
               </div>
             )}
 
+            {/* Data Sources Tab */}
+            {complianceTab === "sources" && (
+              <ComplianceRegistry
+                sources={complianceSources}
+                currentUser={currentUser}
+                onRefresh={onRefreshSources}
+              />
+            )}
+
           </div>
 
         </div>
@@ -477,18 +510,42 @@ export const ComplianceWorkspace: React.FC<ComplianceWorkspaceProps> = ({ client
                   <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Compliance Type</label>
                   <select
                     value={complianceType}
-                    onChange={(e) => setComplianceType(e.target.value)}
+                    onChange={(e) => handleComplianceTypeChange(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-semibold focus:outline-none"
                   >
-                    <option value="GST">GST (Returns & Audits)</option>
-                    <option value="Income Tax">Income Tax (ITR Filings)</option>
-                    <option value="TDS">TDS (Quarterly returns)</option>
-                    <option value="PF">Provident Fund (PF returns)</option>
-                    <option value="ESI">ESI Return filings</option>
-                    <option value="ROC / MCA">ROC MCA Annual Filings</option>
+                    {complianceTypes.length > 0 ? (
+                      complianceTypes.map((t) => (
+                        <option key={t.key} value={t.key}>{t.label}</option>
+                      ))
+                    ) : (
+                      <>
+                        <option value="GST">GST</option>
+                        <option value="Income Tax">Income Tax</option>
+                        <option value="TDS">TDS</option>
+                        <option value="TCS">TCS</option>
+                        <option value="MCA/ROC">MCA/ROC</option>
+                        <option value="PF">PF</option>
+                        <option value="ESI">ESI</option>
+                        <option value="Professional Tax">Professional Tax</option>
+                      </>
+                    )}
                   </select>
                 </div>
               </div>
+
+              {selectedTypeRule && !selectedTypeRule.is_nationally_uniform && (
+                <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-3 text-[11px] leading-relaxed flex gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
+                  <span>
+                    <strong>No safe default for this type.</strong> {selectedTypeRule.limitations}
+                  </span>
+                </div>
+              )}
+              {selectedTypeRule && selectedTypeRule.is_nationally_uniform && (
+                <div className="bg-slate-50 border border-slate-200 text-slate-600 rounded-lg p-3 text-[11px] leading-relaxed">
+                  {selectedTypeRule.summary} {selectedTypeRule.limitations}
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>

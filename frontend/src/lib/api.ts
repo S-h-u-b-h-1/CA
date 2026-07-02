@@ -89,6 +89,25 @@ class ApiClient {
     return this.request<any>("/api/v1/compliance/dashboard", { method: "GET" });
   }
 
+  async getComplianceTypes(): Promise<any[]> {
+    return this.request<any[]>("/api/v1/compliance/types", { method: "GET" });
+  }
+
+  async updateComplianceProfile(profileId: string, profile: {
+    compliance_type?: string;
+    registration_number?: string;
+    frequency?: string;
+    due_day?: number;
+    assigned_manager?: string;
+    assigned_partner?: string;
+    risk_level?: string;
+  }): Promise<any> {
+    return this.request<any>(`/api/v1/compliance/profile/${profileId}`, {
+      method: "PUT",
+      body: JSON.stringify(profile)
+    });
+  }
+
   async getClientCompliance(clientId: string): Promise<any> {
     return this.request<any>(`/api/v1/compliance/clients/${clientId}`, { method: "GET" });
   }

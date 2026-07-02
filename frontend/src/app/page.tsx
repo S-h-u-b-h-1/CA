@@ -7,7 +7,7 @@ import { DashboardOverview } from "../components/DashboardOverview";
 import { ClientWorkspace } from "../components/ClientWorkspace";
 import { DocumentIntelligence } from "../components/DocumentIntelligence";
 import { AISearch } from "../components/AISearch";
-import { ComplianceRegistry } from "../components/ComplianceRegistry";
+import { ComplianceWorkspace } from "../components/ComplianceWorkspace";
 import { AKKCIntegration } from "../components/AKKCIntegration";
 import { SettingsPanel } from "../components/SettingsPanel";
 import DataPipelineDashboard from "../components/DataPipelineDashboard";
@@ -123,7 +123,7 @@ export default function Home() {
     { id: "graph", label: "Knowledge Graph", icon: GitFork },
     { id: "datapipeline", label: "Data Ingestion", icon: Cpu },
     { id: "govknowledge", label: "Gov Ingestion", icon: ShieldCheck },
-    { id: "compliance", label: "Compliance Sources", icon: Database },
+    { id: "compliance", label: "Compliance", icon: ShieldCheck },
     { id: "integrations", label: "Integrations", icon: RefreshCcw },
     { id: "settings", label: "Settings", icon: Settings },
   ];
@@ -260,7 +260,12 @@ export default function Home() {
           )}
 
           {activeTab === "compliance" && (
-            <ComplianceRegistry sources={complianceSources} currentUser={user} onRefresh={loadWorkspaceData} />
+            <ComplianceWorkspace
+              clients={clients}
+              complianceSources={complianceSources}
+              currentUser={user}
+              onRefreshSources={loadWorkspaceData}
+            />
           )}
 
           {activeTab === "graph" && (
