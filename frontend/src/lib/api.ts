@@ -159,6 +159,44 @@ class ApiClient {
     return this.request<any[]>("/api/v1/compliance/alerts", { method: "GET" });
   }
 
+  async getIntelligenceDashboard(filters?: {
+    category?: string;
+    client_id?: string;
+    severity?: string;
+    status_filter?: string;
+  }): Promise<any> {
+    const params = new URLSearchParams();
+    if (filters?.category) params.append("category", filters.category);
+    if (filters?.client_id) params.append("client_id", filters.client_id);
+    if (filters?.severity) params.append("severity", filters.severity);
+    if (filters?.status_filter) params.append("status_filter", filters.status_filter);
+    const qs = params.toString() ? `?${params.toString()}` : "";
+    return this.request<any>(`/api/v1/intelligence/dashboard${qs}`, { method: "GET" });
+  }
+
+  async getIntelligenceRules(): Promise<any[]> {
+    return this.request<any[]>("/api/v1/intelligence/rules", { method: "GET" });
+  }
+
+  async getClientSuggestions(clientId: string): Promise<any[]> {
+    return this.request<any[]>(`/api/v1/intelligence/clients/${clientId}`, { method: "GET" });
+  }
+
+  async regenerateIntelligence(clientId: string): Promise<any> {
+    return this.request<any>(`/api/v1/intelligence/regenerate/${clientId}`, { method: "POST" });
+  }
+
+  async regenerateIntelligenceForOrganization(): Promise<any> {
+    return this.request<any>("/api/v1/intelligence/regenerate", { method: "POST" });
+  }
+
+  async updateSuggestionStatus(suggestionId: string, status: string, reason?: string): Promise<any> {
+    return this.request<any>(`/api/v1/intelligence/${suggestionId}/status`, {
+      method: "PUT",
+      body: JSON.stringify({ status, reason }),
+    });
+  }
+
   async getClient360Workspace(clientId: string, assessmentYear?: string): Promise<any> {
     const params = new URLSearchParams();
     if (assessmentYear) params.append("assessment_year", assessmentYear);

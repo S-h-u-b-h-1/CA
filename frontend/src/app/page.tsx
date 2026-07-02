@@ -8,6 +8,7 @@ import { ClientWorkspace } from "../components/ClientWorkspace";
 import { DocumentIntelligence } from "../components/DocumentIntelligence";
 import { AISearch } from "../components/AISearch";
 import { ComplianceWorkspace } from "../components/ComplianceWorkspace";
+import { IntelligenceDashboard } from "../components/IntelligenceDashboard";
 import { AKKCIntegration } from "../components/AKKCIntegration";
 import { SettingsPanel } from "../components/SettingsPanel";
 import DataPipelineDashboard from "../components/DataPipelineDashboard";
@@ -15,9 +16,9 @@ import GovernmentKnowledgeCenter from "../components/GovernmentKnowledgeCenter";
 import { KnowledgeGraphDashboard } from "../components/KnowledgeGraphDashboard";
 
 
-import { 
-  Building2, Users, FileText, Search, Database, RefreshCcw, 
-  Settings, LogOut, Loader2, PanelLeftClose, PanelLeft, Sparkles, Bell, Cpu, ShieldCheck, GitFork, BookOpen
+import {
+  Building2, Users, FileText, Search, Database, RefreshCcw,
+  Settings, LogOut, Loader2, PanelLeftClose, PanelLeft, Sparkles, Bell, Cpu, ShieldCheck, GitFork, BookOpen, Brain
 } from "lucide-react";
 import { ResearchWorkspace } from "../components/ResearchWorkspace";
 
@@ -116,6 +117,7 @@ export default function Home() {
 
   const sidebarLinks = [
     { id: "dashboard", label: "Dashboard", icon: Building2 },
+    { id: "intelligence", label: "Intelligence", icon: Brain },
     { id: "clients", label: "Clients Workspace", icon: Users },
     { id: "research", label: "Research Workspace", icon: BookOpen },
     { id: "documents", label: "Documents", icon: FileText },
@@ -233,6 +235,10 @@ export default function Home() {
               recentClients={clients}
               onNavigate={(tab) => setActiveTab(tab)}
             />
+          )}
+
+          {activeTab === "intelligence" && (
+            <IntelligenceDashboard clients={clients} />
           )}
 
           {activeTab === "clients" && (
