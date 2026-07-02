@@ -22,6 +22,7 @@ from app.api.v1.citations import router as citations_router
 from app.api.v1.graph import router as graph_router
 from app.api.v1.research import router as research_router
 from app.api.v1.intelligence import router as intelligence_router
+from app.api.v1.notifications import router as notifications_router
 
 
 app = FastAPI(
@@ -139,6 +140,7 @@ app.include_router(citations_router, prefix="/api/v1/citations", tags=["Citation
 app.include_router(graph_router, prefix="/api/v1/graph", tags=["Knowledge Graph"])
 app.include_router(research_router, prefix="/api/v1/research", tags=["Research Workspace"])
 app.include_router(intelligence_router, prefix="/api/v1/intelligence", tags=["Intelligence Engine"])
+app.include_router(notifications_router, prefix="/api/v1/notifications", tags=["Notifications"])
 
 
 @app.get("/")

@@ -315,6 +315,7 @@ from app.schemas.compliance_schemas import (
 from app.services.compliance_service import ComplianceService
 from app.services.compliance_rules import list_compliance_types, get_compliance_type_rule
 from app.models.models import ComplianceProfile, ComplianceTask, ComplianceHistory, ComplianceAlert, Client
+from app.services.intelligence import engine as intelligence_engine
 
 @router.get("/types")
 def get_compliance_types(
@@ -409,6 +410,7 @@ def create_client_compliance_profile(
 
     # Generate tasks
     ComplianceService.generate_recurring_tasks(db, profile)
+    intelligence_engine.generate_for_client(db, client)
     return profile
 
 @router.put("/profile/{profile_id}", response_model=ComplianceProfileSchema)
@@ -442,6 +444,10 @@ def update_client_compliance_profile(
 
     db.commit()
     db.refresh(profile)
+
+    client = db.query(Client).filter(Client.id == profile.client_id).first()
+    if client:
+        intelligence_engine.generate_for_client(db, client)
     return profile
 
 @router.get("/calendar", response_model=List[ComplianceTaskSchema])
@@ -489,6 +495,7 @@ def create_manual_compliance_task(
     db.add(task)
     db.commit()
     db.refresh(task)
+    intelligence_engine.generate_for_client(db, client)
     return task
 
 @router.put("/task/{id}", response_model=ComplianceTaskSchema)
@@ -515,12 +522,16 @@ def update_compliance_task_route(
     task.notes = payload.notes
     
     db.commit()
-    
+
     # If completed, route to complete helper
     if payload.status == "COMPLETED" and old_status != "COMPLETED":
         ComplianceService.complete_task(db, id, None, payload.notes)
-        
+
     db.refresh(task)
+
+    client = db.query(Client).filter(Client.id == task.client_id).first()
+    if client:
+        intelligence_engine.generate_for_client(db, client)
     return task
 
 @router.get("/alerts", response_model=List[ComplianceAlertSchema])

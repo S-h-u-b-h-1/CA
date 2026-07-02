@@ -1293,3 +1293,21 @@ class SuggestionEvidence(Base):
 
     suggestion = relationship("Suggestion", back_populates="evidence")
 
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    organization_id = Column(String(36), ForeignKey("organizations.id"), nullable=False, index=True)
+    client_id = Column(String(36), ForeignKey("clients.id"), nullable=True, index=True)
+    source = Column(String(50), nullable=False)  # TAX, COMPLIANCE, DOCUMENTS, RESEARCH (mirrors Suggestion.category)
+    title = Column(String(500), nullable=False)
+    body = Column(Text, nullable=True)
+    related_suggestion_id = Column(String(36), ForeignKey("suggestions.id"), nullable=True)
+    related_government_update_id = Column(String(36), ForeignKey("government_updates.id"), nullable=True)
+    related_compliance_task_id = Column(String(36), ForeignKey("compliance_tasks.id"), nullable=True)
+    status = Column(String(20), default="UNREAD")  # UNREAD, READ, ARCHIVED
+    read_at = Column(DateTime, nullable=True)
+    archived_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+

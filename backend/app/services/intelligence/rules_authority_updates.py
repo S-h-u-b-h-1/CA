@@ -33,6 +33,13 @@ LOOKBACK_DAYS = 30
 MAX_PER_CATEGORY = 5
 
 
+def compliance_types_for_category(category: str) -> List[str]:
+    """Reverse lookup of COMPLIANCE_TYPE_TO_UPDATE_CATEGORIES, used by the
+    connector sync hook to find which compliance types a newly-ingested
+    update's category is relevant to, without duplicating the mapping."""
+    return [ct for ct, categories in COMPLIANCE_TYPE_TO_UPDATE_CATEGORIES.items() if category in categories]
+
+
 def evaluate(db: Session, client: Client) -> List[SuggestionCandidate]:
     out: List[SuggestionCandidate] = []
 

@@ -4,9 +4,40 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
-from app.models.models import GovernmentSource, GovernmentUpdate, GovernmentUpdateVersion, ConnectorSyncLog, Organization
+from app.models.models import GovernmentSource, GovernmentUpdate, GovernmentUpdateVersion, ConnectorSyncLog, Organization, ComplianceProfile, Client
 from app.services.citation import CitationEngine
 from app.services.graph import GraphService
+
+
+def _trigger_intelligence_for_category(db: Session, category: str) -> None:
+    """A new/updated GovernmentUpdate just landed under `category`. Connectors are
+    global infrastructure (GovernmentSource/GovernmentUpdate have no organization_id),
+    so this looks across ALL organizations for clients whose compliance profile maps
+    to this category (via rules_authority_updates' real category mapping) and
+    regenerates only for those — not a blind org-wide sweep. A failure here must
+    never break connector sync itself.
+    """
+    try:
+        from app.services.intelligence.rules_authority_updates import compliance_types_for_category
+        from app.services.intelligence import engine as intelligence_engine
+
+        matching_types = compliance_types_for_category(category)
+        if not matching_types:
+            return
+
+        client_ids = {
+            row[0] for row in db.query(ComplianceProfile.client_id).filter(
+                ComplianceProfile.compliance_type.in_(matching_types)
+            ).distinct().all()
+        }
+        if not client_ids:
+            return
+
+        clients = db.query(Client).filter(Client.id.in_(client_ids), Client.deleted_at.is_(None)).all()
+        for client in clients:
+            intelligence_engine.generate_for_client(db, client)
+    except Exception as e:
+        print(f"Warning: Intelligence Engine regeneration on authority update failed: {e}")
 
 
 class BaseConnector(ABC):
@@ -214,7 +245,8 @@ class BaseConnector(ABC):
                             source_url=existing_update.source_url
                         )
                     GraphService.build_graph_for_government_update(db, existing_update.id)
-                    
+                    _trigger_intelligence_for_category(db, source.category)
+
                     docs_downloaded += 1
                     source.version_count += 1
                 else:
@@ -226,8 +258,11 @@ class BaseConnector(ABC):
                         source_id=source.id,
                         title=doc_title or meta.get("title", "Untitled Government Circular"),
                         issuing_authority=self.get_authority(),
-                        issue_date=meta.get("issue_date", datetime.utcnow()),
-                        effective_date=meta.get("effective_date", datetime.utcnow()),
+                        # `.get(key, default)` only falls back when the key is ABSENT, not when
+                        # extract_metadata() found no date and set it to None explicitly (the
+                        # common case for source content without a parseable date) — `or` catches both.
+                        issue_date=meta.get("issue_date") or datetime.utcnow(),
+                        effective_date=meta.get("effective_date") or datetime.utcnow(),
                         source_url=doc_url,
                         document_number=doc_num,
                         version=1,
@@ -268,7 +303,8 @@ class BaseConnector(ABC):
                             source_url=new_update.source_url
                         )
                     GraphService.build_graph_for_government_update(db, new_update.id)
-                    
+                    _trigger_intelligence_for_category(db, source.category)
+
                     docs_downloaded += 1
                     source.total_documents_count += 1
 

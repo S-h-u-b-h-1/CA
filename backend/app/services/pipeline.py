@@ -342,6 +342,17 @@ class DocumentPipelineOrchestrator:
             except Exception as e:
                 print(f"Warning: Client Tax Intelligence recompute failed: {e}")
 
+            try:
+                from app.models.models import Document, Client
+                from app.services.intelligence import engine as intelligence_engine
+                doc_record = db.query(Document).filter(Document.id == raw_doc_id).first()
+                if doc_record and doc_record.client_id:
+                    client = db.query(Client).filter(Client.id == doc_record.client_id).first()
+                    if client:
+                        intelligence_engine.generate_for_client(db, client)
+            except Exception as e:
+                print(f"Warning: Intelligence Engine regeneration failed: {e}")
+
             # Sync V1 legacy document status if exists
             from app.models.models import Document
             legacy_doc = db.query(Document).filter(Document.id == raw_doc.id).first()

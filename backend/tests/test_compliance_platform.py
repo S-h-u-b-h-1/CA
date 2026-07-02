@@ -235,3 +235,39 @@ def test_quarterly_task_labels_match_their_actual_filing_period():
     assert len(set(due_dates)) == 4
 
     db.close()
+
+
+def test_sync_falls_back_to_now_when_extract_metadata_finds_no_date():
+    """Regression test: a connector's extract_metadata() legitimately returns
+    {"issue_date": None, ...} when the source content has no parseable date
+    (a real, expected case, not a malformed response). base.py previously used
+    `meta.get("issue_date", datetime.utcnow())`, which only falls back when the
+    key is ABSENT — a present-but-None value silently stored issue_date=NULL,
+    permanently hiding the update from date-filtered queries (e.g. the
+    Intelligence Engine's authority-update lookback window)."""
+    db = TestingSessionLocal()
+
+    connector = ConnectorRegistry.get_connector("CBDT Circulars")
+    assert connector is not None
+
+    original_discover, original_download = connector.discover, connector.download
+    try:
+        connector.discover = lambda session: [{
+            "document_number": "CBDT/NO-DATE-TEST", "title": "Circular with no parseable date",
+            "source_url": "https://incometax.gov.in/nodatetest.txt",
+        }]
+        # Content deliberately has no date pattern the extractor can match.
+        connector.download = lambda url: b"GOVERNMENT OF INDIA - CBDT CIRCULAR\nSubject: undated test content."
+
+        result = connector.sync(db)
+        assert result["status"] == "SUCCESS"
+
+        update = db.query(GovernmentUpdate).filter_by(document_number="CBDT/NO-DATE-TEST").first()
+        assert update is not None
+        assert update.issue_date is not None, "issue_date must fall back to now(), not silently stay NULL"
+        assert (datetime.utcnow() - update.issue_date).total_seconds() < 60
+    finally:
+        connector.discover = original_discover
+        connector.download = original_download
+
+    db.close()

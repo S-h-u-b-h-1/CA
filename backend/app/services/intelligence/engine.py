@@ -23,6 +23,7 @@ from app.services.intelligence.core import SuggestionCandidate, derive_confidenc
 from app.services.intelligence import (
     rules_tax, rules_compliance, rules_documents, rules_authority_updates, rules_research, rules_client_health,
 )
+from app.services import notification_service
 
 ACTIVE_STATUSES = ("NEW", "ACKNOWLEDGED", "IN_PROGRESS")
 
@@ -135,6 +136,14 @@ def generate_for_client(db: Session, client: Client) -> dict:
             db.flush()  # assign row.id before attaching evidence
             for ev in candidate.evidence:
                 db.add(SuggestionEvidence(suggestion_id=row.id, evidence_type=ev.evidence_type, reference_id=ev.reference_id, summary=ev.summary))
+            # Only brand-new suggestions notify — a refreshed/still-open one already
+            # has a notification from when it first appeared, and dismissed/resolved
+            # ones are filtered out above before reaching this branch.
+            notification_service.create_notification(
+                db, organization_id=client.organization_id, client_id=client.id,
+                source=candidate.category, title=candidate.title, body=candidate.explanation,
+                related_suggestion_id=row.id, related_government_update_id=candidate.related_government_update_id,
+            )
             generated += 1
 
     stale = db.query(Suggestion).filter(
