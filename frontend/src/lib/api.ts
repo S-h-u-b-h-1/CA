@@ -197,6 +197,22 @@ class ApiClient {
     });
   }
 
+  async listNotifications(statusFilter?: string): Promise<any[]> {
+    const qs = statusFilter ? `?status_filter=${encodeURIComponent(statusFilter)}` : "";
+    return this.request<any[]>(`/api/v1/notifications${qs}`, { method: "GET" });
+  }
+
+  async getUnreadNotificationCount(): Promise<any> {
+    return this.request<any>("/api/v1/notifications/unread-count", { method: "GET" });
+  }
+
+  async updateNotificationStatus(notificationId: string, status: string): Promise<any> {
+    return this.request<any>(`/api/v1/notifications/${notificationId}/status`, {
+      method: "PUT",
+      body: JSON.stringify({ status }),
+    });
+  }
+
   async getClient360Workspace(clientId: string, assessmentYear?: string): Promise<any> {
     const params = new URLSearchParams();
     if (assessmentYear) params.append("assessment_year", assessmentYear);

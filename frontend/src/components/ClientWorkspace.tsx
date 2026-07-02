@@ -4,13 +4,14 @@ import {
   Plus, User, Mail, Phone, Briefcase, FileText, Settings, BookOpen, AlertCircle,
   ArrowLeft, Sparkles, ShieldCheck, CheckCircle2, AlertTriangle, Clock, Play,
   Download, RefreshCcw, Search, Trash2, Calendar, ClipboardList, CheckSquare,
-  Tag, Pin, MessageSquare, Paperclip, ChevronRight, Activity, SearchIcon
+  Tag, Pin, MessageSquare, Paperclip, ChevronRight, Activity, SearchIcon, Brain
 } from "lucide-react";
 import { TaxIntelligence } from "./TaxIntelligence";
 import { ITRPreparation } from "./ITRPreparation";
 import { TISView } from "./TISView";
 import { ResearchWorkspace } from "./ResearchWorkspace";
 import { ClientComplianceProfile } from "./ClientComplianceProfile";
+import { ClientIntelligencePanel } from "./ClientIntelligencePanel";
 
 interface ClientWorkspaceProps {
   clients: any[];
@@ -446,6 +447,7 @@ export const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({ clients, onRef
                     { id: "overview", label: "Dashboard Overview", icon: Activity },
                     { id: "documents", label: "Document Center", icon: FileText },
                     { id: "compliance", label: "Compliance Profile", icon: ShieldCheck },
+                    { id: "intelligence", label: "Intelligence", icon: Brain },
                     { id: "tax_intelligence", label: "Tax Intelligence", icon: Sparkles },
                     { id: "itr_preparation", label: "ITR Preparation", icon: ShieldCheck },
                     { id: "research", label: "Research Workspace", icon: BookOpen },
@@ -583,6 +585,11 @@ export const ClientWorkspace: React.FC<ClientWorkspaceProps> = ({ clients, onRef
                   {/* Compliance Profile Tab */}
                   {activeSubTab === "compliance" && (
                     <ClientComplianceProfile clientId={selectedClient.id} />
+                  )}
+
+                  {/* Intelligence Tab */}
+                  {activeSubTab === "intelligence" && (
+                    <ClientIntelligencePanel clientId={selectedClient.id} />
                   )}
 
                   {/* Tax Intelligence Tab */}

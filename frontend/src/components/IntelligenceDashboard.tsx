@@ -9,9 +9,9 @@ interface IntelligenceDashboardProps {
   clients: any[];
 }
 
-const SEVERITY_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
+export const SEVERITY_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 
-const SEVERITY_STYLES: Record<string, { bg: string; text: string; border: string; icon: any }> = {
+export const SEVERITY_STYLES: Record<string, { bg: string; text: string; border: string; icon: any }> = {
   CRITICAL: { bg: "bg-red-50", text: "text-red-700", border: "border-red-200", icon: AlertTriangle },
   HIGH: { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200", icon: AlertCircle },
   MEDIUM: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200", icon: Info },
@@ -205,7 +205,7 @@ export const IntelligenceDashboard: React.FC<IntelligenceDashboardProps> = ({ cl
   );
 };
 
-const SuggestionCard: React.FC<{
+export const SuggestionCard: React.FC<{
   suggestion: any;
   expanded: boolean;
   onToggle: () => void;

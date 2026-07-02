@@ -9,6 +9,7 @@ import { DocumentIntelligence } from "../components/DocumentIntelligence";
 import { AISearch } from "../components/AISearch";
 import { ComplianceWorkspace } from "../components/ComplianceWorkspace";
 import { IntelligenceDashboard } from "../components/IntelligenceDashboard";
+import { NotificationCenter } from "../components/NotificationCenter";
 import { AKKCIntegration } from "../components/AKKCIntegration";
 import { SettingsPanel } from "../components/SettingsPanel";
 import DataPipelineDashboard from "../components/DataPipelineDashboard";
@@ -18,7 +19,7 @@ import { KnowledgeGraphDashboard } from "../components/KnowledgeGraphDashboard";
 
 import {
   Building2, Users, FileText, Search, Database, RefreshCcw,
-  Settings, LogOut, Loader2, PanelLeftClose, PanelLeft, Sparkles, Bell, Cpu, ShieldCheck, GitFork, BookOpen, Brain
+  Settings, LogOut, Loader2, PanelLeftClose, PanelLeft, Sparkles, Cpu, ShieldCheck, GitFork, BookOpen, Brain
 } from "lucide-react";
 import { ResearchWorkspace } from "../components/ResearchWorkspace";
 
@@ -210,12 +211,7 @@ export default function Home() {
                 ⚠️ Sandbox Simulation Mode Active
               </span>
             )}
-            <button className="p-1.5 hover:bg-slate-50 border border-slate-200 rounded-full text-slate-400 hover:text-slate-600 relative">
-              <Bell className="h-4 w-4" />
-              {pendingProcessing > 0 && (
-                <span className="absolute top-0 right-0 h-2 w-2 bg-amber-500 rounded-full" />
-              )}
-            </button>
+            <NotificationCenter />
             <div className="h-8 w-px bg-slate-200" />
             <div className="flex items-center space-x-2 text-sm">
               <span className="font-semibold text-slate-700">{user?.first_name} {user?.last_name}</span>
