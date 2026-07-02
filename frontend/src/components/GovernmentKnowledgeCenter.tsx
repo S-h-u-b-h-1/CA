@@ -97,6 +97,16 @@ export default function GovernmentKnowledgeCenter() {
     }
   };
 
+  const handleArchiveDocument = async (docId: string) => {
+    if (!confirm("Archive this document? It will be removed from the active registry.")) return;
+    try {
+      await api.archiveGovernmentDocument(docId);
+      loadDocuments();
+    } catch (err: any) {
+      alert(`Failed to archive document: ${err.message}`);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Upper Title Row */}
@@ -354,12 +364,19 @@ export default function GovernmentKnowledgeCenter() {
                           v{doc.version}
                         </span>
                       </td>
-                      <td className="py-3 text-right">
+                      <td className="py-3 text-right space-x-2 whitespace-nowrap">
                         <button
                           onClick={() => handleFetchVersions(doc)}
                           className="px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-750 rounded text-[10px] font-semibold border border-slate-200 shadow-sm transition inline-flex items-center gap-1"
                         >
                           View Diff <ChevronRight className="h-3 w-3" />
+                        </button>
+                        <button
+                          onClick={() => handleArchiveDocument(doc.id)}
+                          className="px-2.5 py-1 bg-white hover:bg-rose-50 text-rose-600 rounded text-[10px] font-semibold border border-slate-200 hover:border-rose-200 shadow-sm transition"
+                          title="Archive this document (e.g. a stale or erroneous entry)"
+                        >
+                          Archive
                         </button>
                       </td>
                     </tr>

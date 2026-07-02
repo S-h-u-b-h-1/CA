@@ -285,6 +285,28 @@ def get_document_versions(
     }
 
 
+@router.delete("/connectors/documents/{doc_id}")
+def archive_government_document(
+    doc_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Archive (soft-remove) an erroneous or duplicate ingested update - e.g.
+    a stale record left over from a since-fixed connector bug. Does not hard
+    delete: sets status to ARCHIVED so it drops out of the active document
+    registry/search while remaining available for audit."""
+    if current_user.role not in ["SUPER_ADMIN", "FIRM_ADMIN", "PARTNER"]:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    doc = db.query(GovernmentUpdate).filter(GovernmentUpdate.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Government document not found")
+
+    doc.status = "ARCHIVED"
+    db.commit()
+    return {"status": "success", "message": f"Document {doc_id} archived."}
+
+
 from app.schemas.compliance_schemas import (
     ComplianceProfileCreate, ComplianceProfileSchema, ComplianceTaskCreate,
     ComplianceTaskSchema, ComplianceHistorySchema, ComplianceAlertSchema,

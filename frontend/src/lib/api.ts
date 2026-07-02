@@ -556,6 +556,10 @@ class ApiClient {
     return this.request<any>(`/api/v1/compliance/connectors/documents/${docId}/versions`, { method: "GET" });
   }
 
+  async archiveGovernmentDocument(docId: string): Promise<any> {
+    return this.request<any>(`/api/v1/compliance/connectors/documents/${docId}`, { method: "DELETE" });
+  }
+
   // ==========================================
   // CITATIONS (PHASE 4)
   // ==========================================

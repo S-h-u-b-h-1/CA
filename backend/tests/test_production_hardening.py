@@ -8,7 +8,8 @@ import io
 import app.core.database as database_module
 from app.main import app
 from app.core.database import Base, get_db
-from app.models.models import Organization, User, Client, Document, ComplianceSource, Citation
+from app.models.models import Organization, User, Client, Document, ComplianceSource, Citation, GovernmentUpdate
+from app.services.connectors.registry import ConnectorRegistry
 from app.core.security import hash_password
 from app.services.citation import CitationEngine
 
@@ -205,7 +206,7 @@ def test_file_signature_validation():
 
 def test_telemetry_config_route():
     headers = create_test_auth_headers()
-    
+
     response = client.get("/api/v1/observability/config", headers=headers)
     assert response.status_code == 200
     config_data = response.json()
@@ -214,3 +215,27 @@ def test_telemetry_config_route():
     assert "embedding_provider" in config_data
     assert "storage_provider" in config_data
     assert "env" in config_data
+
+
+def test_archive_government_document():
+    headers = create_test_auth_headers()
+
+    db = TestingSessionLocal()
+    egazette = ConnectorRegistry.get_connector("e-Gazette")
+    result = egazette.sync(db)
+    assert result["status"] == "SUCCESS"
+    doc = db.query(GovernmentUpdate).filter_by(document_number="Gazette No. DL-33/2026").first()
+    assert doc is not None
+    doc_id = doc.id
+    db.close()
+
+    res = client.delete(f"/api/v1/compliance/connectors/documents/{doc_id}", headers=headers)
+    assert res.status_code == 200
+    assert res.json()["status"] == "success"
+
+    search_res = client.get("/api/v1/compliance/connectors/documents", headers=headers)
+    assert search_res.status_code == 200
+    assert all(d["id"] != doc_id for d in search_res.json())
+
+    missing_res = client.delete("/api/v1/compliance/connectors/documents/not-a-real-id", headers=headers)
+    assert missing_res.status_code == 404
