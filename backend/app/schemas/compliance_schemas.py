@@ -6,11 +6,24 @@ class ComplianceProfileCreate(BaseModel):
     client_id: str
     compliance_type: str
     registration_number: Optional[str] = None
-    frequency: Optional[str] = "MONTHLY"
-    due_day: Optional[int] = 20
+    # None = "not specified by the caller" - the API applies the compliance
+    # type's real registry default (where one safely exists) rather than a
+    # hardcoded guess. Explicitly passing a value always overrides it.
+    frequency: Optional[str] = None
+    due_day: Optional[int] = None
     assigned_manager: Optional[str] = None
     assigned_partner: Optional[str] = None
     risk_level: Optional[str] = "LOW"
+
+
+class ComplianceProfileUpdate(BaseModel):
+    compliance_type: Optional[str] = None
+    registration_number: Optional[str] = None
+    frequency: Optional[str] = None
+    due_day: Optional[int] = None
+    assigned_manager: Optional[str] = None
+    assigned_partner: Optional[str] = None
+    risk_level: Optional[str] = None
 
 class ComplianceProfileSchema(BaseModel):
     id: str

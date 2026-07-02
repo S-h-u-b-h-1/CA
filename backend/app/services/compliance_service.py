@@ -53,20 +53,27 @@ class ComplianceService:
                     tasks.append(task)
 
         elif profile.frequency == "QUARTERLY":
-            # Generate tasks for next 4 quarters
-            quarters = [
-                ("Q1 (Apr-Jun)", datetime(year, 7, 31, 18, 30, 0)),
-                ("Q2 (Jul-Sep)", datetime(year, 10, 31, 18, 30, 0)),
-                ("Q3 (Oct-Dec)", datetime(year + 1 if now.month >= 11 else year, 1, 31, 18, 30, 0)),
-                ("Q4 (Jan-Mar)", datetime(year + 1 if now.month >= 11 else year, 5, 31, 18, 30, 0))
+            # Generate tasks for next 4 quarters. Each entry is (label, due_month,
+            # due_day, year_offset) where year_offset is added to the *period*
+            # year to get the due date's calendar year - e.g. Q3 (Oct-Dec) of
+            # period_year is due 31-Jan of period_year+1. Labeling by period_year
+            # (not the due date's own year) keeps "Q3 (Oct-Dec) 2026" correctly
+            # referring to the Oct-Dec 2026 filing period, even though its due
+            # date falls in Jan 2027.
+            quarter_defs = [
+                ("Q1 (Apr-Jun)", 7, 31, 0),
+                ("Q2 (Jul-Sep)", 10, 31, 0),
+                ("Q3 (Oct-Dec)", 1, 31, 1),
+                ("Q4 (Jan-Mar)", 5, 31, 0),
             ]
-            for q_label, due in quarters:
-                # Adjust years if due dates are in the past
-                due_date = due
-                if due_date < now:
-                    due_date = datetime(due_date.year + 1, due_date.month, due_date.day, 18, 30, 0)
+            for q_label, due_month, due_day_num, year_offset in quarter_defs:
+                period_year = year
+                due_date = datetime(period_year + year_offset, due_month, due_day_num, 18, 30, 0)
+                while due_date < now:
+                    period_year += 1
+                    due_date = datetime(period_year + year_offset, due_month, due_day_num, 18, 30, 0)
 
-                task_name = f"File {profile.compliance_type} - {q_label} {due_date.year}"
+                task_name = f"File {profile.compliance_type} - {q_label} {period_year}"
                 
                 exists = db.query(ComplianceTask).filter(
                     ComplianceTask.profile_id == profile.id,

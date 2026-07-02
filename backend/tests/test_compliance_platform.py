@@ -5,10 +5,14 @@ from sqlalchemy.pool import StaticPool
 from datetime import datetime
 
 from app.core.database import Base
-from app.models.models import Organization, User, GovernmentSource, GovernmentUpdate, GovernmentUpdateVersion, ConnectorSyncLog
+from app.models.models import (
+    Organization, User, GovernmentSource, GovernmentUpdate, GovernmentUpdateVersion, ConnectorSyncLog,
+    Client, ComplianceProfile, ComplianceTask
+)
 from app.services.connectors.registry import ConnectorRegistry
 from app.services.scheduler import ConnectorScheduler
 from app.services.versioning import VersioningEngine
+from app.services.compliance_service import ComplianceService
 
 
 # Setup SQLite in-memory test database
@@ -179,5 +183,55 @@ def test_connector_sync_and_versioning_lifecycle():
         # Restore mock overrides
         egazette_connector.discover = original_discover
         egazette_connector.download = original_download
+
+    db.close()
+
+
+def test_quarterly_task_labels_match_their_actual_filing_period():
+    """Regression test for a real labeling bug: Q3 (Oct-Dec) is due 31-Jan of
+    the FOLLOWING calendar year, but the label must reflect the year of the
+    Oct-Dec period itself, not the year of the due date. Verified as an
+    invariant (not a fixed date) so this holds regardless of when tests run."""
+    db = TestingSessionLocal()
+    org = Organization(organization_name="Quarter Label Co", firm_type="Partnership", contact_email="q@label.com")
+    db.add(org)
+    db.commit()
+    db.refresh(org)
+
+    client_row = Client(organization_id=org.id, client_name="Quarter Client", client_type="Corporate")
+    db.add(client_row)
+    db.commit()
+    db.refresh(client_row)
+
+    profile = ComplianceProfile(
+        organization_id=org.id,
+        client_id=client_row.id,
+        compliance_type="GST",
+        frequency="QUARTERLY",
+        due_day=20,
+    )
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+
+    tasks = ComplianceService.generate_recurring_tasks(db, profile)
+    assert len(tasks) == 4
+
+    for task in tasks:
+        if "Q3 (Oct-Dec)" in task.task_name:
+            label_year = int(task.task_name.rsplit(" ", 1)[-1])
+            # Q3's due date is always 31 Jan of (period_year + 1) by construction.
+            assert task.due_date.month == 1 and task.due_date.day == 31
+            assert task.due_date.year == label_year + 1
+        elif "Q4 (Jan-Mar)" in task.task_name:
+            label_year = int(task.task_name.rsplit(" ", 1)[-1])
+            # Q4's due date (31 May) is always the same calendar year as the label.
+            assert task.due_date.month == 5 and task.due_date.day == 31
+            assert task.due_date.year == label_year
+
+    # All 4 due dates must be in the future and chronologically distinct.
+    due_dates = sorted(t.due_date for t in tasks)
+    assert all(d > datetime.utcnow() for d in due_dates)
+    assert len(set(due_dates)) == 4
 
     db.close()

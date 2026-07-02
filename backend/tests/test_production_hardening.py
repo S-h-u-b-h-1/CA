@@ -239,3 +239,105 @@ def test_archive_government_document():
 
     missing_res = client.delete("/api/v1/compliance/connectors/documents/not-a-real-id", headers=headers)
     assert missing_res.status_code == 404
+
+
+def test_compliance_types_registry():
+    headers = create_test_auth_headers()
+    res = client.get("/api/v1/compliance/types", headers=headers)
+    assert res.status_code == 200
+    types = res.json()
+    keys = {t["key"] for t in types}
+    assert keys == {"GST", "Income Tax", "TDS", "TCS", "MCA/ROC", "PF", "ESI", "Professional Tax"}
+
+    tds = next(t for t in types if t["key"] == "TDS")
+    assert tds["is_nationally_uniform"] is True
+    assert tds["default_frequency"] == "MONTHLY"
+    assert tds["default_due_day"] == 7
+
+    prof_tax = next(t for t in types if t["key"] == "Professional Tax")
+    assert prof_tax["is_nationally_uniform"] is False
+    assert prof_tax["default_due_day"] is None
+    assert "state" in prof_tax["limitations"].lower()
+
+
+def test_compliance_profile_create_applies_registry_default():
+    headers = create_test_auth_headers()
+    c_res = client.post("/api/v1/clients", json={"client_name": "Registry Default Co", "client_type": "Corporate"}, headers=headers)
+    client_id = c_res.json()["id"]
+
+    # No frequency/due_day supplied - should pick up TDS's real registry default (MONTHLY, 7th)
+    res = client.post("/api/v1/compliance/profile", json={
+        "client_id": client_id,
+        "compliance_type": "TDS",
+    }, headers=headers)
+    assert res.status_code == 200
+    profile = res.json()
+    assert profile["frequency"] == "MONTHLY"
+    assert profile["due_day"] == 7
+
+
+def test_compliance_profile_update():
+    headers = create_test_auth_headers()
+    c_res = client.post("/api/v1/clients", json={"client_name": "Profile Update Co", "client_type": "Corporate"}, headers=headers)
+    client_id = c_res.json()["id"]
+
+    create_res = client.post("/api/v1/compliance/profile", json={
+        "client_id": client_id,
+        "compliance_type": "GST",
+        "frequency": "MONTHLY",
+        "due_day": 20,
+    }, headers=headers)
+    profile_id = create_res.json()["id"]
+
+    update_res = client.put(f"/api/v1/compliance/profile/{profile_id}", json={
+        "frequency": "QUARTERLY",
+        "due_day": 22,
+        "risk_level": "HIGH",
+    }, headers=headers)
+    assert update_res.status_code == 200
+    updated = update_res.json()
+    assert updated["frequency"] == "QUARTERLY"
+    assert updated["due_day"] == 22
+    assert updated["risk_level"] == "HIGH"
+    # Unspecified fields are left untouched
+    assert updated["compliance_type"] == "GST"
+
+    missing_res = client.put("/api/v1/compliance/profile/not-a-real-id", json={"due_day": 5}, headers=headers)
+    assert missing_res.status_code == 404
+
+
+def test_compliance_task_ownership_validation():
+    headers_a = create_test_auth_headers()
+
+    # A second, separate organization/user
+    reg_b = client.post("/api/v1/auth/register", json={
+        "organization_name": "Other Firm",
+        "firm_type": "Proprietorship",
+        "GSTIN": "27OTHRF1234A1Z0",
+        "PAN": "OTHRF1234A",
+        "address": "Delhi",
+        "contact_email": "admin@otherfirm.com",
+        "phone": "+91-9000000000",
+        "admin_first_name": "Other",
+        "admin_last_name": "Admin",
+        "admin_email": "admin@otherfirm.com",
+        "admin_password": "securepassword123"
+    })
+    headers_b = {"Authorization": f"Bearer {reg_b.json()['access_token']}"}
+
+    # Org A creates a real client + compliance profile
+    c_res = client.post("/api/v1/clients", json={"client_name": "Org A Client", "client_type": "Corporate"}, headers=headers_a)
+    client_id_a = c_res.json()["id"]
+    p_res = client.post("/api/v1/compliance/profile", json={
+        "client_id": client_id_a, "compliance_type": "GST", "frequency": "MONTHLY", "due_day": 20
+    }, headers=headers_a)
+    profile_id_a = p_res.json()["id"]
+
+    # Org B tries to create a manual task against Org A's client/profile - must be rejected
+    task_res = client.post("/api/v1/compliance/task", json={
+        "client_id": client_id_a,
+        "profile_id": profile_id_a,
+        "task_name": "Malicious cross-tenant task",
+        "due_date": "2026-08-01T00:00:00",
+    }, headers=headers_b)
+    assert task_res.status_code == 404

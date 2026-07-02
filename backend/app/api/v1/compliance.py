@@ -308,12 +308,23 @@ def archive_government_document(
 
 
 from app.schemas.compliance_schemas import (
-    ComplianceProfileCreate, ComplianceProfileSchema, ComplianceTaskCreate,
+    ComplianceProfileCreate, ComplianceProfileUpdate, ComplianceProfileSchema, ComplianceTaskCreate,
     ComplianceTaskSchema, ComplianceHistorySchema, ComplianceAlertSchema,
     ComplianceDashboardResponse
 )
 from app.services.compliance_service import ComplianceService
+from app.services.compliance_rules import list_compliance_types, get_compliance_type_rule
 from app.models.models import ComplianceProfile, ComplianceTask, ComplianceHistory, ComplianceAlert, Client
+
+@router.get("/types")
+def get_compliance_types(
+    current_user: User = Depends(get_current_user),
+):
+    """Real, researched due-date defaults and documented limitations for each
+    supported compliance type - see compliance_rules.py for sources. Where a
+    rule is jurisdiction/scheme/client-specific (GST, MCA/ROC, Professional
+    Tax), this deliberately returns no safe default rather than a guess."""
+    return list_compliance_types()
 
 @router.get("/dashboard", response_model=ComplianceDashboardResponse)
 def get_compliance_dashboard_view(
@@ -354,6 +365,17 @@ def get_client_compliance_profile(
         "history": history
     }
 
+def _resolve_frequency_and_due_day(compliance_type: str, frequency: Optional[str], due_day: Optional[int]) -> tuple[str, int]:
+    """Fill in unspecified frequency/due_day from the compliance type's real
+    registry default where one safely exists; otherwise fall back to a
+    generic MONTHLY/20th placeholder that the caller must actively review
+    (this only happens for types the registry itself flags as having no
+    safe default, e.g. GST, MCA/ROC, Professional Tax)."""
+    rule = get_compliance_type_rule(compliance_type)
+    resolved_frequency = frequency or (rule["default_frequency"] if rule else None) or "MONTHLY"
+    resolved_due_day = due_day or (rule["default_due_day"] if rule else None) or 20
+    return resolved_frequency, resolved_due_day
+
 @router.post("/profile", response_model=ComplianceProfileSchema)
 def create_client_compliance_profile(
     payload: ComplianceProfileCreate,
@@ -368,13 +390,15 @@ def create_client_compliance_profile(
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
+    frequency, due_day = _resolve_frequency_and_due_day(payload.compliance_type, payload.frequency, payload.due_day)
+
     profile = ComplianceProfile(
         organization_id=current_user.organization_id,
         client_id=payload.client_id,
         compliance_type=payload.compliance_type,
         registration_number=payload.registration_number,
-        frequency=payload.frequency or "MONTHLY",
-        due_day=payload.due_day or 20,
+        frequency=frequency,
+        due_day=due_day,
         assigned_manager=payload.assigned_manager,
         assigned_partner=payload.assigned_partner,
         risk_level=payload.risk_level or "LOW"
@@ -382,9 +406,42 @@ def create_client_compliance_profile(
     db.add(profile)
     db.commit()
     db.refresh(profile)
-    
+
     # Generate tasks
     ComplianceService.generate_recurring_tasks(db, profile)
+    return profile
+
+@router.put("/profile/{profile_id}", response_model=ComplianceProfileSchema)
+def update_client_compliance_profile(
+    profile_id: str,
+    payload: ComplianceProfileUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    profile = db.query(ComplianceProfile).filter(
+        ComplianceProfile.id == profile_id,
+        ComplianceProfile.organization_id == current_user.organization_id
+    ).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Compliance profile not found")
+
+    if payload.compliance_type is not None:
+        profile.compliance_type = payload.compliance_type
+    if payload.registration_number is not None:
+        profile.registration_number = payload.registration_number
+    if payload.frequency is not None:
+        profile.frequency = payload.frequency
+    if payload.due_day is not None:
+        profile.due_day = payload.due_day
+    if payload.assigned_manager is not None:
+        profile.assigned_manager = payload.assigned_manager
+    if payload.assigned_partner is not None:
+        profile.assigned_partner = payload.assigned_partner
+    if payload.risk_level is not None:
+        profile.risk_level = payload.risk_level
+
+    db.commit()
+    db.refresh(profile)
     return profile
 
 @router.get("/calendar", response_model=List[ComplianceTaskSchema])
@@ -403,6 +460,21 @@ def create_manual_compliance_task(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    client = db.query(Client).filter(
+        Client.id == payload.client_id,
+        Client.organization_id == current_user.organization_id,
+        Client.deleted_at.is_(None)
+    ).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    profile = db.query(ComplianceProfile).filter(
+        ComplianceProfile.id == payload.profile_id,
+        ComplianceProfile.organization_id == current_user.organization_id
+    ).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Compliance profile not found")
+
     task = ComplianceTask(
         organization_id=current_user.organization_id,
         client_id=payload.client_id,
