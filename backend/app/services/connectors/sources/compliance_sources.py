@@ -5,6 +5,16 @@ from sqlalchemy.orm import Session
 
 from app.services.connectors.base import BaseConnector
 from app.services.connectors.registry import ConnectorRegistry
+from app.services.connectors.sources.real_sources import (
+    IncomeTaxLatestNewsConnector,
+    CBDTCircularsRealConnector,
+    CBICUnavailableConnector,
+    GSTCouncilRealConnector,
+    MCAUnavailableConnector,
+    ICAIAnnouncementsRealConnector,
+    RBINotificationsRealConnector,
+    SEBICircularsRealConnector,
+)
 
 
 class BaseMockConnector(BaseConnector):
@@ -58,198 +68,6 @@ class BaseMockConnector(BaseConnector):
 
     def schedule(self) -> str:
         return "DAILY"
-
-
-class IncomeTaxERIConnector(BaseMockConnector):
-    def get_name(self) -> str: return "Income Tax ERI"
-    def get_authority(self) -> str: return "Income Tax Department (ERI)"
-    def get_category(self) -> str: return "Direct Tax"
-    
-    def discover(self, db: Session) -> List[Dict[str, Any]]:
-        return [{
-            "document_number": "ERI-API-2026-04",
-            "title": "ERI filing schema validations updates",
-            "source_url": "https://incometax.gov.in/downloads/schemas/ERI-API-2026-04.txt"
-        }]
-
-    def extract_metadata(self, content: bytes, text: str) -> Dict[str, Any]:
-        return {
-            "title": "ERI filing schema validations updates",
-            "issue_date": datetime.utcnow(),
-            "effective_date": datetime.utcnow(),
-            "related_acts": ["Income Tax Act, 1961"],
-            "referenced_sections": ["Section 139"],
-            "keywords": ["ERI", "Schema", "Filing", "API"],
-            "summary": "Updates to electronic return filing schema interfaces."
-        }
-
-
-class CBDTCircularsConnector(BaseMockConnector):
-    def get_name(self) -> str: return "CBDT Circulars"
-    def get_authority(self) -> str: return "Central Board of Direct Taxes (CBDT)"
-    def get_category(self) -> str: return "Direct Tax"
-
-    def discover(self, db: Session) -> List[Dict[str, Any]]:
-        return [{
-            "document_number": "Circular No. 14/2026",
-            "title": "Clarifications on TDS deductions under Section 194Q",
-            "source_url": "https://cbdt.gov.in/circulars/Circular_14_2026.txt"
-        }]
-
-    def extract_metadata(self, content: bytes, text: str) -> Dict[str, Any]:
-        return {
-            "title": "Clarifications on TDS deductions under Section 194Q",
-            "issue_date": datetime.utcnow(),
-            "effective_date": datetime.utcnow(),
-            "related_acts": ["Income Tax Act, 1961"],
-            "referenced_sections": ["Section 194Q", "Section 206C"],
-            "keywords": ["TDS", "CBDT", "Direct Tax", "Section 194Q"],
-            "summary": "Clarificatory circular regarding withholding tax rules on purchase of goods."
-        }
-
-
-class CBICCircularsConnector(BaseMockConnector):
-    def get_name(self) -> str: return "CBIC Circulars"
-    def get_authority(self) -> str: return "Central Board of Indirect Taxes and Customs (CBIC)"
-    def get_category(self) -> str: return "Indirect Tax"
-
-    def discover(self, db: Session) -> List[Dict[str, Any]]:
-        return [{
-            "document_number": "Circular No. 204/2026-GST",
-            "title": "Clarification on GST rate liability on corporate guarantees",
-            "source_url": "https://cbic.gov.in/circulars/Circular_204_2026_GST.txt"
-        }]
-
-    def extract_metadata(self, content: bytes, text: str) -> Dict[str, Any]:
-        return {
-            "title": "Clarification on GST rate liability on corporate guarantees",
-            "issue_date": datetime.utcnow(),
-            "effective_date": datetime.utcnow(),
-            "related_acts": ["CGST Act, 2017"],
-            "referenced_sections": ["Section 15", "Rule 28"],
-            "keywords": ["GST", "CBIC", "Corporate Guarantee", "Rate Change"],
-            "summary": "Administrative guidelines on tax values calculation for financial guarantees."
-        }
-
-
-class GSTCouncilConnector(BaseMockConnector):
-    def get_name(self) -> str: return "GST Council Updates"
-    def get_authority(self) -> str: return "GST Council Secretariat"
-    def get_category(self) -> str: return "Indirect Tax"
-
-    def discover(self, db: Session) -> List[Dict[str, Any]]:
-        return [{
-            "document_number": "GSTC-53-DECISION",
-            "title": "Decisions of the 53rd GST Council Meeting",
-            "source_url": "https://gstcouncil.gov.in/meetings/GSTC_53_DECISION.txt"
-        }]
-
-    def extract_metadata(self, content: bytes, text: str) -> Dict[str, Any]:
-        return {
-            "title": "Decisions of the 53rd GST Council Meeting",
-            "issue_date": datetime.utcnow(),
-            "effective_date": datetime.utcnow(),
-            "related_acts": ["CGST Act, 2017", "IGST Act, 2017"],
-            "referenced_sections": ["Section 9", "Section 16"],
-            "keywords": ["GST Council", "53rd Meeting", "Tax Decisions"],
-            "summary": "Key compliance and policy decisions taken during the GST council meeting."
-        }
-
-
-class MCAPublicConnector(BaseMockConnector):
-    def get_name(self) -> str: return "MCA Public Documents"
-    def get_authority(self) -> str: return "Ministry of Corporate Affairs (MCA)"
-    def get_category(self) -> str: return "Corporate Law"
-
-    def discover(self, db: Session) -> List[Dict[str, Any]]:
-        return [{
-            "document_number": "MCA-DIR-REGS-2026",
-            "title": "Relaxations in DIN KYC filings deadlines",
-            "source_url": "https://mca.gov.in/notifications/MCA_DIR_REGS_2026.txt"
-        }]
-
-    def extract_metadata(self, content: bytes, text: str) -> Dict[str, Any]:
-        return {
-            "title": "Relaxations in DIN KYC filings deadlines",
-            "issue_date": datetime.utcnow(),
-            "effective_date": datetime.utcnow(),
-            "related_acts": ["Companies Act, 2013"],
-            "referenced_sections": ["Section 153", "Rule 12A"],
-            "keywords": ["MCA", "DIN", "KYC", "Relaxation"],
-            "summary": "Notification extending annual DIN verification timeline."
-        }
-
-
-class ICAIAnnouncementsConnector(BaseMockConnector):
-    def get_name(self) -> str: return "ICAI Announcements"
-    def get_authority(self) -> str: return "Institute of Chartered Accountants of India"
-    def get_category(self) -> str: return "Professional Standards"
-
-    def discover(self, db: Session) -> List[Dict[str, Any]]:
-        return [{
-            "document_number": "ICAI-BOS-2026-09",
-            "title": "Revised Standards on Auditing SA 299 guidelines",
-            "source_url": "https://icai.org/announcements/ICAI_BOS_2026_09.txt"
-        }]
-
-    def extract_metadata(self, content: bytes, text: str) -> Dict[str, Any]:
-        return {
-            "title": "Revised Standards on Auditing SA 299 guidelines",
-            "issue_date": datetime.utcnow(),
-            "effective_date": datetime.utcnow(),
-            "related_acts": ["Chartered Accountants Act, 1949"],
-            "referenced_sections": ["SA 299", "SA 600"],
-            "keywords": ["ICAI", "Auditing Standard", "SA 299"],
-            "summary": "Regulatory guidelines on joint auditor responsibilities."
-        }
-
-
-class RBINotificationsConnector(BaseMockConnector):
-    def get_name(self) -> str: return "RBI Notifications"
-    def get_authority(self) -> str: return "Reserve Bank of India (RBI)"
-    def get_category(self) -> str: return "Banking Regulation"
-
-    def discover(self, db: Session) -> List[Dict[str, Any]]:
-        return [{
-            "document_number": "RBI/2026-27/05",
-            "title": "Master Direction on KYC compliance updates",
-            "source_url": "https://rbi.org.in/notifications/RBI_2026_27_05.txt"
-        }]
-
-    def extract_metadata(self, content: bytes, text: str) -> Dict[str, Any]:
-        return {
-            "title": "Master Direction on KYC compliance updates",
-            "issue_date": datetime.utcnow(),
-            "effective_date": datetime.utcnow(),
-            "related_acts": ["Banking Regulation Act, 1949", "PMLA, 2002"],
-            "referenced_sections": ["Section 35A"],
-            "keywords": ["RBI", "KYC", "Master Direction", "Banking"],
-            "summary": "Mandatory periodic updates to Customer Due Diligence norms for banks."
-        }
-
-
-class SEBICircularsConnector(BaseMockConnector):
-    def get_name(self) -> str: return "SEBI Circulars"
-    def get_authority(self) -> str: return "Securities and Exchange Board of India (SEBI)"
-    def get_category(self) -> str: return "Securities Law"
-
-    def discover(self, db: Session) -> List[Dict[str, Any]]:
-        return [{
-            "document_number": "SEBI/HO/IMD/2026/12",
-            "title": "Risk disclosures framework for portfolio managers",
-            "source_url": "https://sebi.gov.in/circulars/SEBI_HO_IMD_2026_12.txt"
-        }]
-
-    def extract_metadata(self, content: bytes, text: str) -> Dict[str, Any]:
-        return {
-            "title": "Risk disclosures framework for portfolio managers",
-            "issue_date": datetime.utcnow(),
-            "effective_date": datetime.utcnow(),
-            "related_acts": ["SEBI Act, 1992"],
-            "referenced_sections": ["Section 11(1)"],
-            "keywords": ["SEBI", "PMS", "Disclosure", "Risk Management"],
-            "summary": "Mandated risk disclosure template modifications for portfolio managers."
-        }
 
 
 class EGazetteConnector(BaseMockConnector):
@@ -492,15 +310,18 @@ class GovPressNotesConnector(BaseMockConnector):
         }
 
 
-# Register all 18 connectors
-ConnectorRegistry.register(IncomeTaxERIConnector())
-ConnectorRegistry.register(CBDTCircularsConnector())
-ConnectorRegistry.register(CBICCircularsConnector())
-ConnectorRegistry.register(GSTCouncilConnector())
-ConnectorRegistry.register(MCAPublicConnector())
-ConnectorRegistry.register(ICAIAnnouncementsConnector())
-ConnectorRegistry.register(RBINotificationsConnector())
-ConnectorRegistry.register(SEBICircularsConnector())
+# Register all 18 connectors. The first 8 (Income Tax through SEBI) are real,
+# verified-working connectors (real HTTP fetches against the actual official
+# sources) - see real_sources.py. The remaining 9 are still BaseMockConnector
+# placeholders, out of scope for the current real-data implementation pass.
+ConnectorRegistry.register(IncomeTaxLatestNewsConnector())
+ConnectorRegistry.register(CBDTCircularsRealConnector())
+ConnectorRegistry.register(CBICUnavailableConnector())
+ConnectorRegistry.register(GSTCouncilRealConnector())
+ConnectorRegistry.register(MCAUnavailableConnector())
+ConnectorRegistry.register(ICAIAnnouncementsRealConnector())
+ConnectorRegistry.register(RBINotificationsRealConnector())
+ConnectorRegistry.register(SEBICircularsRealConnector())
 ConnectorRegistry.register(EGazetteConnector())
 ConnectorRegistry.register(SupremeCourtConnector())
 ConnectorRegistry.register(HighCourtConnector())

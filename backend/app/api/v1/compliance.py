@@ -144,7 +144,7 @@ def list_connectors(
             src = GovernmentSource(
                 source_name=conn.get_name(),
                 category=conn.get_category(),
-                official_url="https://gov.in/" + conn.get_name().lower().replace(" ", "_"),
+                official_url=conn.get_official_url(),
                 requires_auth=conn.requires_auth(),
                 sync_frequency=conn.schedule(),
                 rate_limits=conn.get_rate_limits(),

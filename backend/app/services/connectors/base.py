@@ -75,10 +75,16 @@ class BaseConnector(ABC):
         """Returns if the source requires active authentication credentials"""
         pass
 
+    def get_official_url(self) -> str:
+        """The real URL this connector fetches from. Real connectors should
+        override this with their actual feed/listing URL; defaults to a
+        placeholder pattern for connectors that don't (yet) have one."""
+        return "https://gov.in/" + self.get_name().lower().replace(" ", "_")
+
     def sync(self, db: Session) -> Dict[str, Any]:
         """Runs the complete ingestion pipeline cycle for this source"""
         start_time = time.time()
-        
+
         # 1. Fetch Source entry from Database (or seed it)
         source = db.query(GovernmentSource).filter(
             GovernmentSource.source_name == self.get_name()
@@ -88,7 +94,7 @@ class BaseConnector(ABC):
             source = GovernmentSource(
                 source_name=self.get_name(),
                 category=self.get_category(),
-                official_url="https://gov.in/" + self.get_name().lower().replace(" ", "_"),
+                official_url=self.get_official_url(),
                 requires_auth=self.requires_auth(),
                 sync_frequency=self.schedule(),
                 rate_limits=self.get_rate_limits()
