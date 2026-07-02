@@ -97,20 +97,28 @@ def test_scheduler_state_management():
 
 
 def test_connector_sync_and_versioning_lifecycle():
-    """Verify that running sync twice with changes triggers new versions creation"""
+    """Verify that running sync twice with changes triggers new versions creation.
+
+    Uses the e-Gazette connector (still a BaseMockConnector placeholder - out of
+    scope for the real-data connector work) purely to exercise the generic
+    sync/versioning mechanics via monkeypatched discover/download. CBIC/MCA were
+    deliberately switched to an honest "no real source" connector that reports
+    health_check() == DOWN, so they can no longer serve as a stand-in "always
+    succeeds" mock for this kind of test.
+    """
     db = TestingSessionLocal()
-    
+
     # 1. Initialize connector
-    cbic_connector = ConnectorRegistry.get_connector("CBIC Circulars")
-    assert cbic_connector is not None
+    egazette_connector = ConnectorRegistry.get_connector("e-Gazette")
+    assert egazette_connector is not None
 
     # First sync run
-    result1 = cbic_connector.sync(db)
+    result1 = egazette_connector.sync(db)
     assert result1["status"] == "SUCCESS"
     assert result1["documents_downloaded"] == 1
 
     # Verify document and initial version created
-    doc = db.query(GovernmentUpdate).filter_by(document_number="Circular No. 204/2026-GST").first()
+    doc = db.query(GovernmentUpdate).filter_by(document_number="Gazette No. DL-33/2026").first()
     assert doc is not None
     assert doc.version == 1
 
@@ -118,25 +126,28 @@ def test_connector_sync_and_versioning_lifecycle():
     assert v1_log is not None
 
     # 2. Modify discover outputs to simulate a revision/new version of the same document number
-    original_discover = cbic_connector.discover
-    
+    original_discover = egazette_connector.discover
+
     try:
         # Mock discover to return the same document number but we will mock downloading different text content
         def mock_discover(session):
             return [{
-                "document_number": "Circular No. 204/2026-GST",
-                "title": "Clarification on GST rate liability on corporate guarantees (REVISED)",
-                "source_url": "https://cbic.gov.in/circulars/Circular_204_2026_GST_revised.txt"
+                "document_number": "Gazette No. DL-33/2026",
+                "title": "Notification of the Insolvency Code Amendment Act (REVISED)",
+                "source_url": "https://egazette.nic.in/publications/Gazette_DL_33_2026_revised.txt"
             }]
-        cbic_connector.discover = mock_discover
+        egazette_connector.discover = mock_discover
 
         # Override download method temporarily to return different text for the revised url
-        original_download = cbic_connector.download
+        original_download = egazette_connector.download
         def mock_download(url):
+            # Matches BaseMockConnector.download()'s exact template (used by the
+            # unmocked first sync) plus one genuinely new paragraph, so the diff
+            # engine detects only the intended addition.
             return (
                 "GOVERNMENT OF INDIA - OFFICIAL NOTIFICATION PORTAL\n"
-                "Source Authority: Central Board of Indirect Taxes and Customs (CBIC)\n"
-                "Category: Indirect Tax\n"
+                f"Source Authority: {egazette_connector.get_authority()}\n"
+                f"Category: {egazette_connector.get_category()}\n"
                 "Ingestion URL: " + url + "\n\n"
                 "Subject: Official directive guidelines for compliance.\n"
                 "Pursuant to the powers conferred by Section 143 and Section 148 of the Income-tax Act, 1961, "
@@ -146,10 +157,10 @@ def test_connector_sync_and_versioning_lifecycle():
                 "3. Paragraph Three: Failure to reconcile records under Section 119 will trigger interest liabilities.\n\n"
                 "4. Paragraph Four: New amendment under Section 154 introduced."
             ).encode("utf-8")
-        cbic_connector.download = mock_download
+        egazette_connector.download = mock_download
 
         # Run Second Sync
-        result2 = cbic_connector.sync(db)
+        result2 = egazette_connector.sync(db)
         assert result2["status"] == "SUCCESS"
         assert result2["documents_downloaded"] == 1
 
@@ -166,7 +177,7 @@ def test_connector_sync_and_versioning_lifecycle():
 
     finally:
         # Restore mock overrides
-        cbic_connector.discover = original_discover
-        cbic_connector.download = original_download
+        egazette_connector.discover = original_discover
+        egazette_connector.download = original_download
 
     db.close()

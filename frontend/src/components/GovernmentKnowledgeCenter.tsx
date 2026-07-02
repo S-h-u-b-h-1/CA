@@ -204,6 +204,13 @@ export default function GovernmentKnowledgeCenter() {
                           <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded text-[9px] font-bold border border-emerald-100 flex items-center gap-1">
                             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Healthy
                           </span>
+                        ) : conn.health === "DOWN" ? (
+                          <span
+                            className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[9px] font-bold border border-slate-200 flex items-center gap-1"
+                            title="No real official source could be reached for this authority - not a transient blip."
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-slate-400" /> Unavailable
+                          </span>
                         ) : (
                           <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded text-[9px] font-bold border border-amber-100 flex items-center gap-1">
                             <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> Degraded
